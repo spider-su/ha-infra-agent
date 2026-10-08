@@ -14,6 +14,8 @@ flowchart LR
   J --> U[Read-only UI and JSON API]
 ```
 
+For the system context, component boundaries, source ownership, Home Assistant relationship, deployment model, and proposed extensions, see [the architecture and roadmap](docs/architecture-and-roadmap.md).
+
 ## Run locally
 
 Requires Python 3.11+, `ping` from iputils, and (for MQTT) access to a broker.
