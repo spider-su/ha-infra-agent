@@ -7,11 +7,10 @@ from home_infra_agent.mapping import (
     evaluate_health,
     extract_values,
     parse_path,
-    validate_discovery_identifiers,
-    validate_entity_metadata,
     validate_extractions,
     validate_health,
 )
+from home_infra_agent.config import validate_discovery_identifiers, validate_entity_metadata
 
 
 def test_paths_support_root_nested_properties_and_array_indices():

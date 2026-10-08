@@ -70,7 +70,7 @@ def test_invalid_task_is_reported_at_load_and_sibling_runs(tmp_path, monkeypatch
 
     class Completed:
         returncode = 0
-    monkeypatch.setattr("home_infra_agent.core.subprocess.run", lambda *a, **k: Completed())
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: Completed())
     jobs, errors = discover_jobs(jobs_dir)
     assert len(errors) == 1 and "mixed/bad" in errors[0]
     assert jobs[0].valid and jobs[0].task_errors["bad"] == "task bad: unsupported type 'made_up'"
