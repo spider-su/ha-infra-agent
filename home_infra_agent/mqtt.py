@@ -39,6 +39,18 @@ def _age_seconds(timestamp: str | None) -> int | None:
         return None
 
 
+def _freshness(result: Any, max_age: int | None) -> dict[str, Any]:
+    data = _result_data(result) if result is not None else {}
+    age = _age_seconds(data.get("lastSuccess"))
+    status = "UNKNOWN" if age is None or max_age is None else "STALE" if age > max_age else "FRESH"
+    return {"status": status, "ageSeconds": age, "maxAgeSeconds": max_age}
+
+
+def freshness_data(job: Any, result: Any) -> dict[str, Any]:
+    """Return the freshness view shared by MQTT state and read-only diagnostics."""
+    return _freshness(result, _job_max_age(job))
+
+
 def state_payload(job_id: str, result: Any, max_age: int | None = None,
                   known_keys: set[str] | None = None) -> str:
     data = _result_data(result)
@@ -46,10 +58,8 @@ def state_payload(job_id: str, result: Any, max_age: int | None = None,
     if known_keys:
         for key in known_keys:
             values.setdefault(key, None)
-    age = _age_seconds(data.get("lastSuccess"))
-    freshness = "UNKNOWN" if age is None or max_age is None else "STALE" if age > max_age else "FRESH"
     data["values"] = values
-    data["freshness"] = {"status": freshness, "ageSeconds": age, "maxAgeSeconds": max_age}
+    data["freshness"] = _freshness(data, max_age)
     return json.dumps(data, separators=(",", ":"), default=str)
 
 

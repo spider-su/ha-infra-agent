@@ -208,6 +208,17 @@ cp -R config/examples/http-service config/jobs/example-service
 
 After restart, the Job appears in the UI and its declared entities publish through the existing MQTT adapter. The example is not deployed automatically.
 
+To make a YAML-only integration, copy this directory under `config/jobs/<job-id>/`, edit `job.yaml` for its display name, schedule, freshness, MQTT topic, and entity metadata, then edit the task YAML for the endpoint, extraction paths, conversions, and health rules. Keep credentials as `*Env` references and provide the named variables through the runtime secret environment. Validate and run it locally with a reachable fixture or test endpoint:
+
+```sh
+python -m pip install -e '.[test]'
+cp -R config/examples/http-service config/jobs/example-service
+# Edit config/jobs/example-service/health.yaml and set its auth token in the environment.
+EXAMPLE_SERVICE_API_TOKEN=... HIA_CONFIG_DIR="$PWD/config" .venv/bin/home-infra-agent
+```
+
+In another terminal, check `curl -s http://127.0.0.1:8080/health` for `invalidJobs: 0`, then inspect `/api/jobs` and `/api/jobs/example-service`. For an isolated broker, point the local `application.yaml` at a dedicated Mosquitto instance, provide `HIA_MQTT_PASSWORD` if required, and subscribe to the configured state topic and `homeassistant/#`. Never use the production broker for failure/restart testing. The reproducible YAML-only fixture test is `python -m pytest -q tests/test_configuration.py::test_http_service_example_is_a_yaml_only_integration`.
+
 ### Troubleshooting
 
 - **A Job or Task is rejected at startup:** use the log's Job/Task and field name to check YAML structure, provider type, extraction path, timeout, or metadata.
@@ -244,13 +255,19 @@ The web UI is server-rendered HTML with a small inline script. Untrusted job nam
 
 Each Job has a non-blocking execution lock shared by scheduled and manual runs. A run already in progress is skipped by the scheduler and rejected with HTTP 409 for a manual request; different Jobs can run concurrently. Ping checks use at most eight workers and a bounded wait, preserving `UP`, `DOWN`, `online`, and `total` result meanings.
 
-## Cloud VM deployment
+## Deployment verification and rollback
 
-Native systemd is the lightest route. Install the package into `/opt/home-infra-agent/.venv`, create a `home-infra-agent` system user, copy `config/` to `/etc/home-infra-agent/`, and install `deploy/home-infra-agent.service` into `/etc/systemd/system/`. Add a root-readable `/etc/home-infra-agent/secrets.env` such as `HIA_MQTT_PASSWORD=...` (mode 0600), enable with `systemctl enable --now home-infra-agent`, and inspect `journalctl -u home-infra-agent`. Ensure the VM's Tailscale ACL and routes allow ICMP to the home subnet. If ICMP is blocked, use a generic HTTP health task for reachable services.
+Before each release, record the deployed image digest (or systemd package/version) and configuration revision. For Docker/K3s, pin the image by digest and mount the intended configuration read-only; in K3s, promote the digest through the GitOps repository. Provide only the required environment variables from the deployment's secret mechanism. Check the Deployment rollout and pod events, then inspect logs for configuration errors and MQTT connect/disconnect messages. Confirm `/health` reports the expected `loadedJobs`, `invalidJobs: 0`, and `mqttConnected: true`; inspect `/api/jobs` for each expected Job's last run, last success, and freshness. Verify the new and existing entities remain visible in Home Assistant and the configured broker is reachable after a pod restart.
 
-Alternatively build the included Dockerfile and mount the config read-only at `/etc/home-infra-agent`; pass the MQTT password as a container secret/environment variable. The image includes iputils ping. For Docker networking, explicitly provide the private route/Tailscale sidecar or host networking as appropriate to the VM.
+For systemd, install the package into `/opt/home-infra-agent/.venv`, create the `home-infra-agent` system user, copy `config/` to `/etc/home-infra-agent/`, and install `deploy/home-infra-agent.service`. Keep `/etc/home-infra-agent/secrets.env` root-readable with mode 0600; use `systemctl enable --now home-infra-agent`, check `systemctl status home-infra-agent` and `journalctl -u home-infra-agent`, then query `http://127.0.0.1:8080/health` and `/api/jobs`. Verify the VM's Tailscale ACL and routes allow its configured sources. The Docker image includes `iputils-ping`; for Docker networking, provide the required private route or Tailscale sidecar.
 
-The process starts one lightweight scheduler thread per job, sleeps between runs, and uses bounded network timeouts. Idle resource use was not measured in this development environment; expect a modest Python service footprint, with CPU near idle between configured runs. Measure actual VM memory after deployment before setting limits.
+Rollback K3s by reverting the GitOps promotion to the previously recorded image digest and configuration revision, syncing Argo CD, and verifying the previous pods and `/health`. For systemd, restore the previous package/image and non-secret config revision, keep the existing secrets file in place, and restart the service. Do not clear retained MQTT discovery or state topics during rollback; stable entity identifiers let the previous version resume publishing to the same Home Assistant entities. If an entity is missing, inspect its retained discovery and state before considering any migration.
+
+### Local resource measurement
+
+On this development container (Linux arm64 Docker 29.5.2), `docker build -t home-infra-agent:stage4 .` followed by `python scripts/measure_runtime.py` measured a 0.41 s startup, 21.55 MiB idle container memory, two process threads, 21.55–21.56 MiB while one HTTP Job ran every two seconds, 0.01–0.53% sampled CPU, and a 170 ms Job duration. The local fixture returns a small JSON document after a 150 ms delay. This footprint is consistent with a small cloud VM or lightweight K3s pod, but these are local container measurements, not production metrics; measure the target host before setting resource limits.
+
+The broker integration test observed eight agent publications for a Job with one value on initial connection: availability, five built-in discovery records, one value discovery record, and state. A reconnect republishes the same eight records. A Job with seven output values emits 14 messages on connect (availability, 12 discovery records, and state). Broker-side retained replays to subscribers are additional deliveries, not new agent publications.
 
 ## CI image and GitOps deployment
 

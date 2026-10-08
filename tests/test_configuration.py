@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from home_infra_agent.core import PROVIDERS, JobEngine, discover_jobs
+from home_infra_agent.mqtt import discovery_configs, state_payload
 
 
 def test_existing_job_yaml_loads_after_configuration_schema_extension():
@@ -13,6 +14,8 @@ def test_existing_job_yaml_loads_after_configuration_schema_extension():
     jobs, errors = discover_jobs(root / "config/jobs")
     assert not errors
     assert {job.id for job in jobs} == {"investory", "proxmox", "solarman"}
+    from home_infra_agent.providers import PROVIDERS
+    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman"}
     assert all(job.valid and not job.task_errors for job in jobs)
 
 
@@ -51,6 +54,14 @@ def test_http_service_example_is_a_yaml_only_integration(tmp_path):
         assert result.values["temperature"] == 20.8
         assert result.values["nodeState"] == "UP"
         assert result.values["ready"] == result.values["total"] == 2
+        state = yaml.safe_load(state_payload(result.job, result, 180))
+        assert state["values"]["humidity"] == 45
+        assert state["freshness"]["status"] == "FRESH"
+        entities = {topic: yaml.safe_load(payload) for topic, payload in discovery_configs(jobs[0], result)}
+        ready = entities["homeassistant/sensor/home_infra_agent_example-service_ready/config"]
+        assert ready["name"] == "Ready nodes" and ready["unit_of_measurement"] == "nodes"
+        node_state = entities["homeassistant/binary_sensor/home_infra_agent_example-service_nodeState/config"]
+        assert node_state["payload_on"] == "UP" and node_state["payload_off"] == "DOWN"
         assert set(PROVIDERS) == providers_before
     finally:
         server.shutdown()
@@ -92,3 +103,21 @@ def test_invalid_mqtt_entity_config_isolated_to_its_job(tmp_path):
     jobs, errors = discover_jobs(jobs_dir)
     assert len(jobs) == 2 and len(errors) == 1
     assert not jobs[0].valid and jobs[1].valid
+
+
+def test_mqtt_password_must_be_loaded_from_environment(tmp_path, monkeypatch):
+    from home_infra_agent.app import load_app_config
+
+    path = tmp_path / "application.yaml"
+    path.write_text("mqtt:\n  password: inline-secret\n")
+    try:
+        load_app_config(path)
+    except ValueError as exc:
+        assert "passwordEnv" in str(exc)
+        assert "inline-secret" not in str(exc)
+    else:
+        raise AssertionError("inline MQTT password was accepted")
+
+    path.write_text("mqtt:\n  passwordEnv: HIA_TEST_MQTT_PASSWORD\n")
+    monkeypatch.setenv("HIA_TEST_MQTT_PASSWORD", "env-secret")
+    assert load_app_config(path)["mqtt"]["password"] == "env-secret"
