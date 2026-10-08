@@ -27,12 +27,12 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
         key_str = str(key)
         slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
         component = "binary_sensor" if value in ("UP", "DOWN") else "sensor"
-        entities.append((component, slug, key_str, f'values["{key_str}"]'))
+        entities.append((component, slug, key_str, key_str))
     configs = []
     for component, key, name, template_path in entities:
         uid = f"{identifier}_{key}"
         config = {"name": name, "unique_id": uid, "state_topic": topic,
-                  "value_template": "{{ value_json." + template_path + " }}",
+                  "value_template": "{{ value_json[\"values\"][\"" + template_path + "\"] }}" if template_path not in {"status", "timestamp", "durationMs"} else "{{ value_json." + template_path + " }}",
                   "availability_topic": "home-infra-agent/availability",
                   "device": {"identifiers": [identifier], "name": device.get("name", job.name),
                              "manufacturer": device.get("manufacturer", "Custom"),
@@ -41,6 +41,18 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
             config.update(payload_on="UP", payload_off="DOWN")
         if key == "duration_ms":
             config["unit_of_measurement"] = "ms"
+        if key == "snapshotDate":
+            config["device_class"] = "date"
+        if key in {"totalDeposits", "totalWithdrawals", "netDeposits", "totalCash",
+                   "totalMarketValue", "totalEquity", "totalRealizedProfit",
+                   "totalUnrealizedProfit", "totalDividends", "totalInterest",
+                   "totalFees", "totalTaxes", "convertedCashSubtotal",
+                   "convertedEquitySubtotal", "equity", "totalProfit"}:
+            currency = values.get("baseCurrency")
+            if currency:
+                config.update(device_class="monetary", state_class="measurement", unit_of_measurement=currency)
+        elif key == "roiPct":
+            config.update(state_class="measurement", unit_of_measurement="%")
         configs.append((f"{prefix}/{component}/{uid}/config", json.dumps(config, separators=(",", ":"))))
     return configs
 

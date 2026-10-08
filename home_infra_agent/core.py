@@ -12,10 +12,11 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -234,8 +235,57 @@ class KubernetesProvider(TaskProvider):
         return status, values
 
 
+class InvestoryPostgresProvider(TaskProvider):
+    """Read the latest Investory performance snapshot in a read-only transaction."""
+
+    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
+        env_name = config.get("databaseUrlEnv")
+        if not isinstance(env_name, str) or not env_name.strip():
+            raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
+        conninfo = os.environ.get(env_name)
+        if not conninfo:
+            raise RuntimeError(f"database connection environment variable {env_name} is unavailable")
+        try:
+            portfolio_id = int(config.get("portfolioId", 1))
+            if portfolio_id != 1:
+                raise ValueError
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"task {task_id}: this Investory source is scoped to portfolioId 1") from exc
+
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError("PostgreSQL support is not installed") from exc
+
+        statement_timeout_ms = max(100, int(timeout * 1000))
+        with psycopg.connect(
+            conninfo,
+            connect_timeout=max(1, int(timeout)),
+            options=f"-c statement_timeout={statement_timeout_ms}",
+            row_factory=dict_row,
+        ) as connection:
+            connection.execute("SET TRANSACTION READ ONLY")
+            row = connection.execute(
+                """SELECT snapshot_date, equity, total_profit, base_currency
+                     FROM investory.ha_investory_portfolio_latest()"""
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(f"Investory performance snapshot for portfolio {portfolio_id} is unavailable")
+
+        values: dict[str, Any] = {
+            "portfolioId": portfolio_id,
+            "snapshotDate": row["snapshot_date"].isoformat() if row["snapshot_date"] else None,
+            "baseCurrency": row["base_currency"],
+            "equity": float(row["equity"]) if row["equity"] is not None else None,
+            "totalProfit": float(row["total_profit"]) if row["total_profit"] is not None else None,
+        }
+        return "OK", values
+
+
 PROVIDERS: dict[str, TaskProvider] = {
     "ping": PingProvider(), "http": HttpProvider(), "kubernetes": KubernetesProvider(),
+    "investory_postgres": InvestoryPostgresProvider(),
 }
 
 
@@ -259,6 +309,81 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         raise ConfigError(f"task {task_id}: url must be an HTTP(S) URL")
     if kind == "kubernetes" and config.get("scope", "cluster") != "cluster":
         raise ConfigError(f"task {task_id}: only cluster scope is supported")
+    if kind == "investory_postgres":
+        if not isinstance(config.get("databaseUrlEnv"), str) or not config["databaseUrlEnv"].strip():
+            raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
+        try:
+            if int(config.get("portfolioId", 1)) != 1:
+                raise ValueError
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"task {task_id}: this Investory source is scoped to portfolioId 1") from exc
+
+
+def _cron_field(expression: str, minimum: int, maximum: int, field_name: str) -> set[int]:
+    allowed: set[int] = set()
+    for part in expression.split(","):
+        base, slash, step_text = part.partition("/")
+        try:
+            step = int(step_text) if slash else 1
+        except ValueError as exc:
+            raise ConfigError(f"invalid cron {field_name}: {expression!r}") from exc
+        if step < 1:
+            raise ConfigError(f"invalid cron {field_name}: {expression!r}")
+        if base == "*":
+            start, end = minimum, maximum
+        elif "-" in base:
+            parts = base.split("-", 1)
+            try:
+                start, end = int(parts[0]), int(parts[1])
+            except ValueError as exc:
+                raise ConfigError(f"invalid cron {field_name}: {expression!r}") from exc
+        else:
+            try:
+                start = int(base)
+            except ValueError as exc:
+                raise ConfigError(f"invalid cron {field_name}: {expression!r}") from exc
+            end = maximum if slash else start
+        if start < minimum or end > maximum or start > end:
+            raise ConfigError(f"invalid cron {field_name}: {expression!r}")
+        allowed.update(range(start, end + 1, step))
+    if not allowed:
+        raise ConfigError(f"invalid cron {field_name}: {expression!r}")
+    return allowed
+
+
+def cron_matches(expression: str, local_time: datetime) -> bool:
+    fields = expression.split()
+    if len(fields) != 5:
+        raise ConfigError("schedule.cron must contain five fields")
+    minute, hour, day, month, weekday = fields
+    minutes = _cron_field(minute, 0, 59, "minute")
+    hours = _cron_field(hour, 0, 23, "hour")
+    days = _cron_field(day, 1, 31, "day")
+    months = _cron_field(month, 1, 12, "month")
+    weekdays = _cron_field(weekday, 0, 7, "weekday")
+    cron_weekday = (local_time.weekday() + 1) % 7
+    weekday_match = cron_weekday in weekdays or (cron_weekday == 0 and 7 in weekdays)
+    day_match = local_time.day in days
+    if day != "*" and weekday != "*":
+        day_match = day_match or weekday_match
+    else:
+        day_match = day_match and weekday_match
+    return (local_time.minute in minutes and local_time.hour in hours
+            and day_match and local_time.month in months)
+
+
+def next_cron_run(expression: str, timezone_name: str, after: datetime | None = None) -> datetime:
+    try:
+        zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ConfigError(f"invalid schedule timezone: {timezone_name!r}") from exc
+    cursor = (after or datetime.now(timezone.utc)).astimezone(zone)
+    cursor = cursor.replace(second=0, microsecond=0, tzinfo=zone) + timedelta(minutes=1)
+    for _ in range(366 * 24 * 60):
+        if cron_matches(expression, cursor):
+            return cursor
+        cursor += timedelta(minutes=1)
+    raise ConfigError("schedule.cron has no matching time within one year")
 
 
 @dataclass
@@ -282,6 +407,15 @@ class Job:
     @property
     def timeout(self) -> float:
         return parse_duration(self.config.get("timeout", "10s"))
+
+    @property
+    def next_run_epoch(self) -> float | None:
+        schedule = self.config.get("schedule", {})
+        if "cron" in schedule:
+            return next_cron_run(
+                str(schedule["cron"]), str(schedule.get("timezone", "UTC"))
+            ).timestamp()
+        return self.last_run_epoch + self.interval if self.last_run_epoch is not None else None
 
     def run(self) -> JobResult:
         started = time.monotonic()
@@ -351,7 +485,15 @@ def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
             schedule = config.get("schedule", {})
             if not isinstance(schedule, dict):
                 raise ConfigError("job.yaml: schedule must be a mapping")
-            parse_duration(schedule.get("interval", "60s"))
+            if "cron" in schedule:
+                if "interval" in schedule:
+                    raise ConfigError("job.yaml: schedule cannot combine cron and interval")
+                timezone_name = schedule.get("timezone", "UTC")
+                if not isinstance(timezone_name, str):
+                    raise ConfigError("job.yaml: schedule.timezone must be a string")
+                next_cron_run(str(schedule["cron"]), timezone_name)
+            else:
+                parse_duration(schedule.get("interval", "60s"))
             tasks: dict[str, dict[str, Any]] = {}
             for task_file in sorted(directory.glob("*.yaml")):
                 if task_file.name == "job.yaml":
@@ -390,6 +532,22 @@ class JobEngine:
             self.threads.append(thread)
 
     def _schedule(self, job: Job) -> None:
+        schedule = job.config.get("schedule", {}) if job.valid else {}
+        if "cron" in schedule:
+            expression = str(schedule["cron"])
+            timezone_name = str(schedule.get("timezone", "UTC"))
+            while not self.stop_event.is_set():
+                try:
+                    due = next_cron_run(expression, timezone_name)
+                    delay = due.astimezone(timezone.utc).timestamp() - datetime.now(timezone.utc).timestamp()
+                    if self.stop_event.wait(max(0.0, delay)):
+                        return
+                    self.run_job(job.id)
+                except Exception:
+                    log.exception("job scheduler failed for %s", job.id)
+                    if self.stop_event.wait(60):
+                        return
+            return
         while not self.stop_event.is_set():
             started = time.monotonic()
             try:
