@@ -1,0 +1,12 @@
+id: proxmox
+name: Proxmox Cluster
+schedule:
+  interval: 60s
+timeout: 3s
+mqtt:
+  enabled: true
+  topic: home/proxmox
+  device:
+    name: Proxmox Cluster
+    manufacturer: Custom
+    model: Proxmox Cluster

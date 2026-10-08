@@ -1,0 +1,27 @@
+name: Home Infra Agent CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install project and test dependencies
+        run: python -m pip install '.[test]'
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Compile application
+        run: python -m compileall -q home_infra_agent

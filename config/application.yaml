@@ -1,0 +1,11 @@
+web:
+  host: 127.0.0.1
+  port: 8080
+
+mqtt:
+  enabled: false
+  host: 127.0.0.1
+  port: 1883
+  username: home-infra-agent
+  passwordEnv: HIA_MQTT_PASSWORD
+  discoveryPrefix: homeassistant

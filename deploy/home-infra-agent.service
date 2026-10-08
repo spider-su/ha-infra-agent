@@ -1,0 +1,22 @@
+[Unit]
+Description=Home Infra Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=home-infra-agent
+Group=home-infra-agent
+Environment=HIA_CONFIG_DIR=/etc/home-infra-agent
+Environment=HIA_HOST=127.0.0.1
+EnvironmentFile=-/etc/home-infra-agent/secrets.env
+ExecStart=/opt/home-infra-agent/.venv/bin/home-infra-agent
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
