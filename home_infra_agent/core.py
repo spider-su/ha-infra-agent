@@ -182,9 +182,17 @@ class KubernetesProvider(TaskProvider):
             values[f"node_{safe_name or 'unknown'}"] = "UP" if ready else "DOWN"
 
         pod_phases: dict[str, int] = {"Running": 0, "Pending": 0, "Failed": 0, "Unknown": 0, "Succeeded": 0}
+        pods_not_ready = 0
         for pod in pods:
-            phase = str(pod.get("status", {}).get("phase", "Unknown"))
+            pod_status = pod.get("status", {})
+            phase = str(pod_status.get("phase", "Unknown"))
             pod_phases[phase if phase in pod_phases else "Unknown"] += 1
+            if phase == "Running" and not pod.get("metadata", {}).get("deletionTimestamp"):
+                ready = any(
+                    condition.get("type") == "Ready" and condition.get("status") == "True"
+                    for condition in (pod_status.get("conditions") or [])
+                )
+                pods_not_ready += int(not ready)
 
         deployments_ready = sum(
             int(item.get("status", {}).get("availableReplicas", 0) or 0) >= desired(item)
@@ -204,12 +212,13 @@ class KubernetesProvider(TaskProvider):
             and deployments_ready == len(deployments)
             and statefulsets_ready == len(statefulsets)
             and daemonsets_ready == len(daemonsets)
-            and pod_phases["Pending"] == 0 and pod_phases["Failed"] == 0 and pod_phases["Unknown"] == 0
+            and pod_phases["Pending"] == 0 and pod_phases["Unknown"] == 0 and pods_not_ready == 0
         )
         values.update({
             "nodesReady": nodes_ready,
             "nodesTotal": len(nodes),
             "podsRunning": pod_phases["Running"],
+            "podsNotReady": pods_not_ready,
             "podsPending": pod_phases["Pending"],
             "podsFailed": pod_phases["Failed"],
             "podsUnknown": pod_phases["Unknown"],
