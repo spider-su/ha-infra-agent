@@ -1,0 +1,313 @@
+input_boolean:
+  utility_consumption_profile_initialized:
+    name: Utility consumption profile initialized
+    icon: mdi:tune
+  utility_meter_readings_initialized:
+    name: Utility meter readings initialized
+    icon: mdi:counter
+  utility_meter_readings_calibrated:
+    name: Utility meter readings calibrated
+    icon: mdi:chart-bell-curve
+
+input_number:
+  utility_gas_meter_entry:
+    name: Gas meter reading to record
+    min: 0
+    max: 9999999
+    step: 0.01
+    mode: box
+    unit_of_measurement: m³
+    icon: mdi:meter-gas
+  utility_water_meter_entry:
+    name: Water meter reading to record
+    min: 0
+    max: 9999999
+    step: 0.01
+    mode: box
+    unit_of_measurement: m³
+    icon: mdi:water
+  utility_gas_last_meter_reading:
+    name: Previous gas meter reading
+    min: 0
+    max: 9999999
+    step: 0.01
+    mode: box
+    unit_of_measurement: m³
+  utility_water_last_meter_reading:
+    name: Previous water meter reading
+    min: 0
+    max: 9999999
+    step: 0.01
+    mode: box
+    unit_of_measurement: m³
+  utility_gas_baseline_daily:
+    name: Gas baseline per day
+    min: 0
+    max: 1000
+    step: 0.01
+    mode: box
+    unit_of_measurement: m³/day
+  utility_water_baseline_daily:
+    name: Water baseline per day
+    min: 0
+    max: 100
+    step: 0.001
+    mode: box
+    unit_of_measurement: m³/day
+  utility_gas_winter_factor:
+    name: Gas winter factor
+    min: 0.1
+    max: 5
+    step: 0.05
+    mode: box
+  utility_gas_summer_factor:
+    name: Gas summer factor
+    min: 0.1
+    max: 5
+    step: 0.05
+    mode: box
+  utility_water_winter_factor:
+    name: Water winter factor
+    min: 0.1
+    max: 5
+    step: 0.05
+    mode: box
+  utility_water_summer_factor:
+    name: Water summer factor
+    min: 0.1
+    max: 5
+    step: 0.05
+    mode: box
+
+input_select:
+  utility_season_mode:
+    name: Utility season mode
+    options:
+      - Auto
+      - Summer
+      - Winter
+    icon: mdi:weather-sunny
+
+input_datetime:
+  utility_last_meter_reading:
+    name: Last quarterly meter reading date
+    has_date: true
+    has_time: true
+    icon: mdi:calendar-clock
+
+input_button:
+  utility_record_quarterly_readings:
+    name: Record quarterly gas and water readings
+    icon: mdi:content-save-check
+
+template:
+  - sensor:
+      - name: Utility consumption season
+        unique_id: utility_consumption_season
+        state: >-
+          {% set selected = states('input_select.utility_season_mode') %}
+          {% if selected in ['Summer', 'Winter'] %}
+            {{ selected }}
+          {% elif now().month in [11, 12, 1, 2, 3] %}
+            Winter
+          {% else %}
+            Summer
+          {% endif %}
+      - name: Estimated gas consumption this month
+        unique_id: utility_estimated_gas_consumption_month
+        unit_of_measurement: m³
+        state_class: measurement
+        icon: mdi:meter-gas
+        state: >-
+          {% set base = states('input_number.utility_gas_baseline_daily') | float(0) %}
+          {% if base <= 0 %}{% set base = 19.2 %}{% endif %}
+          {% set winter = is_state('sensor.utility_consumption_season', 'Winter') %}
+          {% set factor_entity = 'input_number.utility_gas_winter_factor' if winter else 'input_number.utility_gas_summer_factor' %}
+          {% set factor = states(factor_entity) | float(0) %}
+          {% if factor <= 0 %}{% set factor = 1.8 if winter else 0.45 %}{% endif %}
+          {% set first = now().replace(day=1) %}
+          {% set next_month = (first + timedelta(days=32)).replace(day=1) %}
+          {{ (base * factor * (next_month - first).days) | round(1) }}
+        attributes:
+          season: "{{ states('sensor.utility_consumption_season') }}"
+          daily_baseline_m3: >-
+            {% set value = states('input_number.utility_gas_baseline_daily') | float(0) %}
+            {{ value if value > 0 else 19.2 }}
+          baseline_source: >-
+            {{ 'Quarterly meter readings' if is_state('input_boolean.utility_meter_readings_calibrated', 'on') else 'Provisional chart estimate until two readings are recorded' }}
+          last_meter_reading: "{{ states('input_datetime.utility_last_meter_reading') }}"
+      - name: Estimated water consumption this month
+        unique_id: utility_estimated_water_consumption_month
+        unit_of_measurement: m³
+        state_class: measurement
+        icon: mdi:water
+        state: >-
+          {% set base = states('input_number.utility_water_baseline_daily') | float(0) %}
+          {% if base <= 0 %}{% set base = 0.235 %}{% endif %}
+          {% set winter = is_state('sensor.utility_consumption_season', 'Winter') %}
+          {% set factor_entity = 'input_number.utility_water_winter_factor' if winter else 'input_number.utility_water_summer_factor' %}
+          {% set factor = states(factor_entity) | float(0) %}
+          {% if factor <= 0 %}{% set factor = 0.9 if winter else 1.15 %}{% endif %}
+          {% set first = now().replace(day=1) %}
+          {% set next_month = (first + timedelta(days=32)).replace(day=1) %}
+          {{ (base * factor * (next_month - first).days) | round(1) }}
+        attributes:
+          season: "{{ states('sensor.utility_consumption_season') }}"
+          daily_baseline_m3: >-
+            {% set value = states('input_number.utility_water_baseline_daily') | float(0) %}
+            {{ value if value > 0 else 0.235 }}
+          baseline_source: >-
+            {{ 'Quarterly meter readings' if is_state('input_boolean.utility_meter_readings_calibrated', 'on') else 'Provisional chart estimate until two readings are recorded' }}
+          last_meter_reading: "{{ states('input_datetime.utility_last_meter_reading') }}"
+
+automation:
+  - id: utility_consumption_initialize_profile
+    alias: Utility consumption - initialize profile defaults
+    description: Seed editable chart-derived baselines and summer/winter factors once.
+    triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+    conditions:
+      - condition: template
+        value_template: "{{ not is_state('input_boolean.utility_consumption_profile_initialized', 'on') }}"
+    actions:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_gas_baseline_daily
+        data:
+          value: 19.2
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_water_baseline_daily
+        data:
+          value: 0.235
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_gas_winter_factor
+        data:
+          value: 1.8
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_gas_summer_factor
+        data:
+          value: 0.45
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_water_winter_factor
+        data:
+          value: 0.9
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.utility_water_summer_factor
+        data:
+          value: 1.15
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.utility_consumption_profile_initialized
+    mode: single
+
+  - id: utility_consumption_record_quarterly_readings
+    alias: Utility consumption - record quarterly readings
+    description: Save cumulative gas and water meter values and recalibrate after the next reading.
+    triggers:
+      - trigger: state
+        entity_id: input_button.utility_record_quarterly_readings
+    variables:
+      new_gas: "{{ states('input_number.utility_gas_meter_entry') | float(0) }}"
+      new_water: "{{ states('input_number.utility_water_meter_entry') | float(0) }}"
+      old_gas: "{{ states('input_number.utility_gas_last_meter_reading') | float(0) }}"
+      old_water: "{{ states('input_number.utility_water_last_meter_reading') | float(0) }}"
+      elapsed_days: >-
+        {% set previous = as_timestamp(states('input_datetime.utility_last_meter_reading'), default=0) %}
+        {{ ((as_timestamp(now()) - previous) / 86400) if previous > 0 else 0 }}
+    actions:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ not is_state('input_boolean.utility_meter_readings_initialized', 'on')
+                     and new_gas > 0 and new_water > 0 }}
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_gas_last_meter_reading
+                data:
+                  value: "{{ new_gas }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_water_last_meter_reading
+                data:
+                  value: "{{ new_water }}"
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.utility_last_meter_reading
+                data:
+                  date: "{{ now().strftime('%Y-%m-%d') }}"
+                  time: "{{ now().strftime('%H:%M:%S') }}"
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.utility_meter_readings_initialized
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ is_state('input_boolean.utility_meter_readings_initialized', 'on')
+                     and new_gas > old_gas and new_water > old_water and elapsed_days > 0 }}
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_gas_baseline_daily
+                data:
+                  value: "{{ ((new_gas - old_gas) / elapsed_days) | round(4) }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_water_baseline_daily
+                data:
+                  value: "{{ ((new_water - old_water) / elapsed_days) | round(4) }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_gas_last_meter_reading
+                data:
+                  value: "{{ new_gas }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.utility_water_last_meter_reading
+                data:
+                  value: "{{ new_water }}"
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.utility_last_meter_reading
+                data:
+                  date: "{{ now().strftime('%Y-%m-%d') }}"
+                  time: "{{ now().strftime('%H:%M:%S') }}"
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.utility_meter_readings_calibrated
+        default:
+          - action: logbook.log
+            data:
+              name: Utility meter readings
+              message: >-
+                Reading was not recorded. Enter positive cumulative gas and water readings;
+                later readings must increase and be recorded on a later date.
+    mode: single
+
+  - id: utility_consumption_daily_message
+    alias: Utility consumption - one daily estimate message
+    description: Replace the same persistent notification with the current monthly gas and water estimate.
+    triggers:
+      - trigger: time
+        at: "20:00:00"
+    conditions: []
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: utility_consumption_daily
+          title: Daily utility estimate
+          message: >-
+            Estimated full-month consumption for {{ now().strftime('%B %Y') }}:
+            gas {{ states('sensor.estimated_gas_consumption_this_month') }} m³;
+            water {{ states('sensor.estimated_water_consumption_this_month') }} m³.
+            Mode: {{ states('sensor.utility_consumption_season') }}.
+            {{ 'Estimates now use the latest quarterly readings.' if is_state('input_boolean.utility_meter_readings_calibrated', 'on') else 'Provisional estimate from the supplied charts; record two quarterly meter readings to calibrate it.' }}
+            To update, enter both cumulative readings in the Utility helpers and press Record quarterly gas and water readings.
+    mode: single
