@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
+import math
 import os
 import ssl
 import subprocess
@@ -29,6 +30,10 @@ def utc_now() -> str:
 
 class ConfigError(ValueError):
     pass
+
+
+class JobBusyError(RuntimeError):
+    """Raised when a run is already active for this Job."""
 
 
 @dataclass(frozen=True)
@@ -76,17 +81,31 @@ class PingProvider(TaskProvider):
         if not isinstance(targets, dict) or not targets:
             raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
         values: dict[str, Any] = {}
-        for name, host in targets.items():
+        def ping(name_host: tuple[Any, Any]) -> tuple[str, str]:
+            name, host = name_host
             if not isinstance(host, str) or not host.strip():
-                values[str(name)] = "DOWN"
-                continue
+                return str(name), "DOWN"
             try:
                 completed = subprocess.run(["ping", "-c", "1", "-W", str(max(1, int(timeout))), host],
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                            timeout=timeout + 1, check=False)
-                values[str(name)] = "UP" if completed.returncode == 0 else "DOWN"
+                return str(name), "UP" if completed.returncode == 0 else "DOWN"
             except (OSError, subprocess.TimeoutExpired):
-                values[str(name)] = "DOWN"
+                return str(name), "DOWN"
+        items = list(targets.items())
+        for offset in range(0, len(items), 8):
+            batch = items[offset:offset + 8]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch), thread_name_prefix="ping") as pool:
+                futures = [pool.submit(ping, item) for item in batch]
+                try:
+                    for future in concurrent.futures.as_completed(futures, timeout=timeout + 1.2):
+                        name, status = future.result()
+                        values[name] = status
+                except concurrent.futures.TimeoutError:
+                    for future in futures:
+                        future.cancel()
+        for name, _host in items:
+            values.setdefault(str(name), "DOWN")
         online = sum(value == "UP" for value in values.values())
         values.update(online=online, total=len(targets))
         return ("OK" if online == len(targets) else "WARN" if online else "ERROR"), values
@@ -244,7 +263,7 @@ class InvestoryPostgresProvider(TaskProvider):
             raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
         conninfo = os.environ.get(env_name)
         if not conninfo:
-            raise RuntimeError(f"database connection environment variable {env_name} is unavailable")
+            raise ConfigError(f"database connection environment variable {env_name} is unavailable")
         try:
             portfolio_id = int(config.get("portfolioId", 1))
             if portfolio_id != 1:
@@ -299,8 +318,10 @@ def _ensure_solarman_provider() -> None:
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text())
-    except (OSError, yaml.YAMLError) as exc:
-        raise ConfigError(f"{path.name}: {exc}") from exc
+    except OSError as exc:
+        raise ConfigError(f"{path.name}: unable to read configuration") from exc
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path.name}: invalid YAML") from exc
     if not isinstance(value, dict):
         raise ConfigError(f"{path.name}: document must be a mapping")
     return value
@@ -421,6 +442,7 @@ class Job:
     last_success: str | None = None
     last_run_epoch: float | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+    execution_lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def interval(self) -> float:
@@ -439,7 +461,7 @@ class Job:
             ).timestamp()
         return self.last_run_epoch + self.interval if self.last_run_epoch is not None else None
 
-    def run(self) -> JobResult:
+    def _run_unlocked(self) -> JobResult:
         started = time.monotonic()
         results: dict[str, TaskResult] = {}
         if not self.valid:
@@ -456,18 +478,21 @@ class Job:
                     results[task_id] = TaskResult(task_id, status, timestamp,
                         int((time.monotonic() - task_start) * 1000), task_values)
                 except Exception as exc:  # each task is an independent failure domain
-                    log.warning("job %s task %s failed: %s", self.id, task_id, exc)
+                    safe_error = str(exc) if isinstance(exc, ConfigError) else f"{type(exc).__name__} (details redacted)"
+                    log.warning("job %s task %s failed: %s", self.id, task_id, safe_error)
                     results[task_id] = TaskResult(task_id, "ERROR", timestamp,
-                        int((time.monotonic() - task_start) * 1000), {}, str(exc))
+                        int((time.monotonic() - task_start) * 1000), {}, safe_error)
             statuses = [result.status for result in results.values()]
             status = "UNKNOWN" if not results else "ERROR" if "ERROR" in statuses else "WARN" if "WARN" in statuses else "OK"
-            values = {f"{task_id}.{key}": value for task_id, result in results.items() for key, value in result.values.items()}
-            # Also expose unique value names directly for convenient HA templates/UI.
-            for result in results.values():
-                for key, value in result.values.items():
-                    if key not in values:
-                        values[key] = value
-            if status == "OK":
+            values: dict[str, Any] = {}
+            aliases: dict[str, list[Any]] = {}
+            for task_id in sorted(results):
+                for key, value in sorted(results[task_id].values.items()):
+                    values[f"{task_id}.{key}"] = value
+                    aliases.setdefault(key, []).append(value)
+            # Keep legacy aliases where unique; ambiguous names are omitted.
+            values.update({key: items[0] for key, items in aliases.items() if len(items) == 1})
+            if status in {"OK", "WARN"}:
                 self.last_success = utc_now()
         result = JobResult(self.id, status, utc_now(), int((time.monotonic() - started) * 1000),
                            values, results, self.last_success)
@@ -475,6 +500,14 @@ class Job:
             self.last_result = result
             self.last_run_epoch = time.time()
         return result
+
+    def run(self) -> JobResult:
+        if not self.execution_lock.acquire(blocking=False):
+            raise JobBusyError(f"job {self.id} is already running")
+        try:
+            return self._run_unlocked()
+        finally:
+            self.execution_lock.release()
 
 
 def parse_duration(value: Any) -> float:
@@ -516,6 +549,19 @@ def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
                 next_cron_run(str(schedule["cron"]), timezone_name)
             else:
                 parse_duration(schedule.get("interval", "60s"))
+            freshness = config.get("freshness", {})
+            if not isinstance(freshness, dict):
+                raise ConfigError("job.yaml: freshness must be a mapping")
+            if "maxAge" in freshness:
+                age_text = str(freshness["maxAge"]).strip().lower()
+                amount_text = age_text[:-1] if age_text.endswith(("s", "m")) else age_text
+                try:
+                    amount = float(amount_text)
+                    parse_duration(freshness["maxAge"])
+                except (TypeError, ValueError, ConfigError) as exc:
+                    raise ConfigError("job.yaml: freshness.maxAge must be a positive duration") from exc
+                if not math.isfinite(amount) or amount <= 0:
+                    raise ConfigError("job.yaml: freshness.maxAge must be a positive duration")
             tasks: dict[str, dict[str, Any]] = {}
             for task_file in sorted(directory.glob("*.yaml")):
                 if task_file.name == "job.yaml":
@@ -539,13 +585,18 @@ class JobEngine:
 
     def run_job(self, job_id: str) -> JobResult:
         job = self.jobs[job_id]
-        result = job.run()
-        if self.on_result:
-            try:
-                self.on_result(job, result)
-            except Exception:
-                log.exception("result adapter failed for job %s", job_id)
-        return result
+        if not job.execution_lock.acquire(blocking=False):
+            raise JobBusyError(f"job {job_id} is already running")
+        try:
+            result = job._run_unlocked()
+            if self.on_result:
+                try:
+                    self.on_result(job, result)
+                except Exception:
+                    log.exception("result adapter failed for job %s", job_id)
+            return result
+        finally:
+            job.execution_lock.release()
 
     def start(self) -> None:
         for job in self.jobs.values():
@@ -565,6 +616,8 @@ class JobEngine:
                     if self.stop_event.wait(max(0.0, delay)):
                         return
                     self.run_job(job.id)
+                except JobBusyError:
+                    continue
                 except Exception:
                     log.exception("job scheduler failed for %s", job.id)
                     if self.stop_event.wait(60):
@@ -574,6 +627,8 @@ class JobEngine:
             started = time.monotonic()
             try:
                 self.run_job(job.id)
+            except JobBusyError:
+                pass
             except Exception:
                 log.exception("job scheduler failed for %s", job.id)
             delay = max(.1, job.interval - (time.monotonic() - started))

@@ -3,6 +3,8 @@ schedule:
   cron: "0 9-22 * * 1-5"
   timezone: Europe/Warsaw
 timeout: 15s
+freshness:
+  maxAge: 259200s
 mqtt:
   enabled: true
   topic: home/investory/portfolio

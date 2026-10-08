@@ -3,6 +3,8 @@ name: Proxmox Cluster
 schedule:
   interval: 60s
 timeout: 3s
+freshness:
+  maxAge: 180s
 mqtt:
   enabled: true
   topic: home/proxmox

@@ -1,0 +1,1303 @@
+{
+  "investory": [
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "Status",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_status",
+        "value_template": "{{ value_json.status }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "Last run",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_last_run",
+        "value_template": "{{ value_json.timestamp }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_last_run/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "Duration",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_duration_ms",
+        "unit_of_measurement": "ms",
+        "value_template": "{{ value_json.durationMs }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_duration_ms/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolio.portfolioId",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolio_portfolioId",
+        "value_template": "{{ value_json[\"values\"][\"portfolio.portfolioId\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolio_portfolioId/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolio.snapshotDate",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolio_snapshotDate",
+        "value_template": "{{ value_json[\"values\"][\"portfolio.snapshotDate\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolio_snapshotDate/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolio.baseCurrency",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolio_baseCurrency",
+        "value_template": "{{ value_json[\"values\"][\"portfolio.baseCurrency\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolio_baseCurrency/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolio.equity",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolio_equity",
+        "value_template": "{{ value_json[\"values\"][\"portfolio.equity\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolio_equity/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolio.totalProfit",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolio_totalProfit",
+        "value_template": "{{ value_json[\"values\"][\"portfolio.totalProfit\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolio_totalProfit/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "portfolioId",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_portfolioId",
+        "value_template": "{{ value_json[\"values\"][\"portfolioId\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_portfolioId/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "device_class": "date",
+        "name": "snapshotDate",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_snapshotDate",
+        "value_template": "{{ value_json[\"values\"][\"snapshotDate\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_snapshotDate/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "name": "baseCurrency",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_baseCurrency",
+        "value_template": "{{ value_json[\"values\"][\"baseCurrency\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_baseCurrency/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "device_class": "monetary",
+        "name": "equity",
+        "state_class": "measurement",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_equity",
+        "unit_of_measurement": "PLN",
+        "value_template": "{{ value_json[\"values\"][\"equity\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_equity/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_investory"
+          ],
+          "manufacturer": "Investory",
+          "model": "Portfolio Summary",
+          "name": "Investory Portfolio"
+        },
+        "device_class": "monetary",
+        "name": "totalProfit",
+        "state_class": "measurement",
+        "state_topic": "home/investory/portfolio/state",
+        "unique_id": "home_infra_agent_investory_totalProfit",
+        "unit_of_measurement": "PLN",
+        "value_template": "{{ value_json[\"values\"][\"totalProfit\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_investory_totalProfit/config"
+    }
+  ],
+  "proxmox": [
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "Status",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_status",
+        "value_template": "{{ value_json.status }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "Last run",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_last_run",
+        "value_template": "{{ value_json.timestamp }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_last_run/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "Duration",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_duration_ms",
+        "unit_of_measurement": "ms",
+        "value_template": "{{ value_json.durationMs }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_duration_ms/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "nodes.home-lab-0",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_nodes_home_lab_0",
+        "value_template": "{{ value_json[\"values\"][\"nodes.home-lab-0\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_nodes_home_lab_0/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "nodes.home-lab-1",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_nodes_home_lab_1",
+        "value_template": "{{ value_json[\"values\"][\"nodes.home-lab-1\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_nodes_home_lab_1/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "nodes.home-lab-2",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_nodes_home_lab_2",
+        "value_template": "{{ value_json[\"values\"][\"nodes.home-lab-2\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_nodes_home_lab_2/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "nodes.online",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_nodes_online",
+        "value_template": "{{ value_json[\"values\"][\"nodes.online\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_nodes_online/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "nodes.total",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_nodes_total",
+        "value_template": "{{ value_json[\"values\"][\"nodes.total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_nodes_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "home-lab-0",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_home_lab_0",
+        "value_template": "{{ value_json[\"values\"][\"home-lab-0\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_home_lab_0/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "home-lab-1",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_home_lab_1",
+        "value_template": "{{ value_json[\"values\"][\"home-lab-1\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_home_lab_1/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "home-lab-2",
+        "payload_off": "DOWN",
+        "payload_on": "UP",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_home_lab_2",
+        "value_template": "{{ value_json[\"values\"][\"home-lab-2\"] }}"
+      },
+      "topic": "homeassistant/binary_sensor/home_infra_agent_proxmox_home_lab_2/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "online",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_online",
+        "value_template": "{{ value_json[\"values\"][\"online\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_online/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_proxmox"
+          ],
+          "manufacturer": "Custom",
+          "model": "Proxmox Cluster",
+          "name": "Proxmox Cluster"
+        },
+        "name": "total",
+        "state_topic": "home/proxmox/state",
+        "unique_id": "home_infra_agent_proxmox_total",
+        "value_template": "{{ value_json[\"values\"][\"total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_proxmox_total/config"
+    }
+  ],
+  "solarman": [
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "Status",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_status",
+        "value_template": "{{ value_json.status }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "Last run",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_last_run",
+        "value_template": "{{ value_json.timestamp }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_last_run/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "Duration",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_duration_ms",
+        "unit_of_measurement": "ms",
+        "value_template": "{{ value_json.durationMs }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_duration_ms/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.solar_production_total",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_solar_production_total",
+        "value_template": "{{ value_json[\"values\"][\"current.solar_production_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_solar_production_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.solar_production_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_solar_production_today",
+        "value_template": "{{ value_json[\"values\"][\"current.solar_production_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_solar_production_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.pv_power",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_pv_power",
+        "value_template": "{{ value_json[\"values\"][\"current.pv_power\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_pv_power/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.grid_export_total",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_grid_export_total",
+        "value_template": "{{ value_json[\"values\"][\"current.grid_export_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_grid_export_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.grid_export_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_grid_export_today",
+        "value_template": "{{ value_json[\"values\"][\"current.grid_export_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_grid_export_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.grid_import_total",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_grid_import_total",
+        "value_template": "{{ value_json[\"values\"][\"current.grid_import_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_grid_import_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.grid_import_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_grid_import_today",
+        "value_template": "{{ value_json[\"values\"][\"current.grid_import_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_grid_import_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.home_consumption_power",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_home_consumption_power",
+        "value_template": "{{ value_json[\"values\"][\"current.home_consumption_power\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_home_consumption_power/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.home_consumption_total_raw",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_home_consumption_total_raw",
+        "value_template": "{{ value_json[\"values\"][\"current.home_consumption_total_raw\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_home_consumption_total_raw/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.home_consumption_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_home_consumption_today",
+        "value_template": "{{ value_json[\"values\"][\"current.home_consumption_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_home_consumption_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.battery_state_of_charge",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_battery_state_of_charge",
+        "value_template": "{{ value_json[\"values\"][\"current.battery_state_of_charge\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_battery_state_of_charge/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.battery_charge_total",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_battery_charge_total",
+        "value_template": "{{ value_json[\"values\"][\"current.battery_charge_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_battery_charge_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.battery_charge_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_battery_charge_today",
+        "value_template": "{{ value_json[\"values\"][\"current.battery_charge_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_battery_charge_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.battery_discharge_total",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_battery_discharge_total",
+        "value_template": "{{ value_json[\"values\"][\"current.battery_discharge_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_battery_discharge_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.battery_discharge_today",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_battery_discharge_today",
+        "value_template": "{{ value_json[\"values\"][\"current.battery_discharge_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_battery_discharge_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.inverter_status",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_inverter_status",
+        "value_template": "{{ value_json[\"values\"][\"current.inverter_status\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_inverter_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.source_status",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_source_status",
+        "value_template": "{{ value_json[\"values\"][\"current.source_status\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_source_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.collection_time",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_collection_time",
+        "value_template": "{{ value_json[\"values\"][\"current.collection_time\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_collection_time/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "name": "current.source_age_seconds",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_current_source_age_seconds",
+        "value_template": "{{ value_json[\"values\"][\"current.source_age_seconds\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_current_source_age_seconds/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Solar production total",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_solar_production_total",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"solar_production_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_solar_production_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Solar production today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_solar_production_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"solar_production_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_solar_production_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "power",
+        "expire_after": 7200,
+        "name": "PV power",
+        "state_class": "measurement",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_pv_power",
+        "unit_of_measurement": "W",
+        "value_template": "{{ value_json[\"values\"][\"pv_power\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_pv_power/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Grid export total",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_grid_export_total",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"grid_export_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_grid_export_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Grid export today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_grid_export_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"grid_export_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_grid_export_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Grid import total",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_grid_import_total",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"grid_import_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_grid_import_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Grid import today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_grid_import_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"grid_import_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_grid_import_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "power",
+        "expire_after": 7200,
+        "name": "Home consumption power",
+        "state_class": "measurement",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_home_consumption_power",
+        "unit_of_measurement": "W",
+        "value_template": "{{ value_json[\"values\"][\"home_consumption_power\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_home_consumption_power/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Home consumption total raw API counter",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_home_consumption_total_raw",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"home_consumption_total_raw\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_home_consumption_total_raw/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Home consumption today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_home_consumption_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"home_consumption_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_home_consumption_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "battery",
+        "expire_after": 7200,
+        "name": "Battery state of charge",
+        "state_class": "measurement",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_battery_state_of_charge",
+        "unit_of_measurement": "%",
+        "value_template": "{{ value_json[\"values\"][\"battery_state_of_charge\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_battery_state_of_charge/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Battery charge total",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_battery_charge_total",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"battery_charge_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_battery_charge_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Battery charge today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_battery_charge_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"battery_charge_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_battery_charge_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Battery discharge total",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_battery_discharge_total",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"battery_discharge_total\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_battery_discharge_total/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "energy",
+        "expire_after": 7200,
+        "name": "Battery discharge today",
+        "state_class": "total_increasing",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_battery_discharge_today",
+        "unit_of_measurement": "kWh",
+        "value_template": "{{ value_json[\"values\"][\"battery_discharge_today\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_battery_discharge_today/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "expire_after": 7200,
+        "name": "Inverter status",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_inverter_status",
+        "value_template": "{{ value_json[\"values\"][\"inverter_status\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_inverter_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "expire_after": 7200,
+        "name": "Solarman source status",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_source_status",
+        "value_template": "{{ value_json[\"values\"][\"source_status\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_source_status/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "device_class": "timestamp",
+        "expire_after": 7200,
+        "name": "Solarman collection time",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_collection_time",
+        "value_template": "{{ value_json[\"values\"][\"collection_time\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_collection_time/config"
+    },
+    {
+      "config": {
+        "availability_topic": "home-infra-agent/availability",
+        "device": {
+          "identifiers": [
+            "home_infra_agent_solarman"
+          ],
+          "manufacturer": "Solarman",
+          "model": "Cloud API inverter telemetry",
+          "name": "Solarman Solar and Battery"
+        },
+        "expire_after": 7200,
+        "name": "Solarman source age",
+        "state_class": "measurement",
+        "state_topic": "home/solarman/state",
+        "unique_id": "home_infra_agent_solarman_source_age_seconds",
+        "unit_of_measurement": "s",
+        "value_template": "{{ value_json[\"values\"][\"source_age_seconds\"] }}"
+      },
+      "topic": "homeassistant/sensor/home_infra_agent_solarman_source_age_seconds/config"
+    }
+  ]
+}
