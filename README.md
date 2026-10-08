@@ -27,7 +27,7 @@ pip install -e '.[test]'
 HIA_CONFIG_DIR="$PWD/config" HIA_HOST=127.0.0.1 home-infra-agent
 ```
 
-Open <http://127.0.0.1:8080>. The initial Proxmox job checks `home-lab-0` through `home-lab-2` at `192.168.1.51`–`.53`. The cloud VM must have a Tailscale/private route to `192.168.1.0/24`. The default web bind is loopback; put a private reverse proxy in front if remote UI access is needed.
+Open <http://127.0.0.1:8080>. The initial Proxmox job checks `home-lab-0` through `home-lab-2` at `192.168.1.51`–`.53`. The cloud VM must have a Tailscale/private route to `192.168.1.0/24`. The default web bind is loopback; use only a trusted private network path for remote access.
 
 ## Configuration
 
@@ -251,9 +251,65 @@ The Proxmox device exposes a status, last-run timestamp, duration, each node's U
 - `GET /api/jobs` — discovered jobs and latest state
 - `GET /api/jobs/{id}` — job details and latest normalized result
 - `POST /api/jobs/{id}/run` — run one job immediately
-- `GET /health` — process health and MQTT connection state
+- `GET /health` — process, scheduler, job-configuration counts, MQTT state, and observation time
 
 The web UI is server-rendered HTML with a small inline script. Untrusted job names and result data are inserted with DOM `textContent`, not HTML parsing. The Run now endpoint requires a matching `Origin` (or same-origin `Referer`) and returns HTTP 409 if that Job is already active. It is read-only except for the explicit Run now action; it does not edit configuration.
+
+### External Watchdog Integration
+
+The watchdog should pull this service's read-only HTTP status; it should not mirror MQTT or repeat detailed provider collection. Infra Agent owns the configured Job checks and current result state. The cloud watchdog owns independent reachability checks and critical email/SMS delivery. It must continue its checks and notifications when Infra Agent is unavailable. Infra Agent does not send the cloud watchdog's critical notifications.
+
+Use `GET /health` for agent-level availability and `GET /api/jobs` for the compact per-Job summary. Both are read-only, return HTTP 200 when the request succeeds, and do not trigger a Job run. `GET /api/jobs/{id}` remains available for the UI and includes the full normalized result; the watchdog should use `/api/jobs` to avoid retrieving detailed values.
+
+Example `GET /health` response:
+
+```json
+{
+  "status": "ok",
+  "mqttConnected": false,
+  "loadedJobs": 3,
+  "invalidJobs": 0,
+  "processAlive": true,
+  "schedulerRunning": true,
+  "observedAt": "2026-10-08T10:40:04+00:00"
+}
+```
+
+Here `status: "ok"` and `processAlive: true` mean the HTTP process answered. They do not mean that every Job is healthy. `schedulerRunning` reports whether the scheduler was started and its expected worker threads are alive. `mqttConnected` is independent: MQTT may be disconnected while HTTP and Job monitoring remain available.
+
+Example item from `GET /api/jobs`:
+
+```json
+{
+  "id": "proxmox",
+  "name": "Proxmox Cluster",
+  "valid": true,
+  "status": "ERROR",
+  "executionStatus": "ERROR",
+  "running": false,
+  "neverExecuted": false,
+  "lastRun": "2026-10-08T10:40:04+00:00",
+  "lastAttempt": "2026-10-08T10:40:03+00:00",
+  "lastSuccess": "2026-10-08T09:40:03+00:00",
+  "failureReason": "nodes: ERROR",
+  "freshness": {"status": "STALE", "ageSeconds": 3601, "maxAgeSeconds": 180}
+}
+```
+
+`status` is the latest completed result (`OK`, `WARN`, `ERROR`, or `UNKNOWN`); `executionStatus` is `RUNNING` while an attempt is active and otherwise matches that result status. `lastRun` is the existing result-completion timestamp. `lastAttempt` is the attempt start time. Timestamps emitted by the agent are ISO 8601 UTC with `+00:00`. `lastSuccess` is null until an `OK` or `WARN` result exists. `neverExecuted` remains true until an attempt completes; it can be true at the same time as `running` during a first attempt. Invalid configuration is identified by `valid: false` and `failureReason` even before the first result.
+
+Freshness is calculated against the current time for each HTTP response using the Job's existing `freshness.maxAge` policy and most recent successful timestamp. It does not depend on the last MQTT publication. `FRESH` and `STALE` describe time since success, independently of the latest result status; `UNKNOWN` means there is no successful timestamp or no max-age policy. Provider failures, stale Jobs, invalid configuration, and MQTT disconnection are represented in the JSON body and do not turn a successful read into an HTTP error. Unknown Job IDs return 404.
+
+The HTTP API has no authentication, so keep it on a trusted private network. The default `HIA_HOST` / `web.host` is `127.0.0.1`; for a systemd host, set it to the host's private or Tailscale interface address. In Kubernetes, the process must listen on the Pod interface (`web.host: 0.0.0.0`) for its ClusterIP Service; keep that Service internal and make any Ingress reachable only through the home/Tailscale network. The current `ops-autopilot` development chart uses this Pod bind and has `/health` and `/api` Ingress routes; external reachability still depends on private DNS, routing, ingress, and Tailscale ACLs and must be checked from the watchdog VM.
+
+From that private network, verify with:
+
+```sh
+curl --fail --show-error http://<private-agent-address>:8080/health
+curl --fail --show-error http://<private-agent-address>:8080/api/jobs
+```
+
+Do not publish these routes to the public Internet. The watchdog should continue to check home connectivity, Proxmox/K3s/Home Assistant reachability, and external Investory Cloud Run directly. Those independent checks detect conditions such as a home outage that also makes Infra Agent unreachable; use the Agent's summary to avoid duplicating its detailed Job collection and interpretation.
 
 Each Job has a non-blocking execution lock shared by scheduled and manual runs. A run already in progress is skipped by the scheduler and rejected with HTTP 409 for a manual request; different Jobs can run concurrently. Ping checks use at most eight workers and a bounded wait, preserving `UP`, `DOWN`, `online`, and `total` result meanings.
 
