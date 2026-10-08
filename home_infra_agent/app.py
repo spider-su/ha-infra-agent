@@ -13,7 +13,8 @@ from urllib.parse import unquote, urlparse
 import yaml
 from dotenv import load_dotenv
 
-from .core import JobBusyError, JobEngine, discover_jobs
+from .core import JobBusyError, JobEngine
+from .config import discover_jobs
 from .mqtt import MqttAdapter
 
 log = logging.getLogger(__name__)

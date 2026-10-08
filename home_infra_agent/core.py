@@ -1,42 +1,26 @@
-"""Configuration, task providers, scheduling, and normalized result models."""
+"""Normalized results, Job execution, scheduling, and concurrency controls."""
 from __future__ import annotations
 
-import concurrent.futures
-import base64
-import json
 import logging
-import math
-import os
-import re
-import socket
-import ssl
-import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
-from urllib.parse import urlencode
-from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import yaml
-
-from .mapping import (MappingError, evaluate_health, extract_values, validate_discovery_identifiers,
-                      validate_entity_metadata, validate_extractions, validate_health)
+from .errors import ConfigError
+from .mapping import MappingError, evaluate_health, extract_values
+from .providers import (PROVIDERS, HttpProvider, InvestoryPostgresProvider,
+                        KubernetesProvider, PingProvider, SolarmanProvider)
+from .providers.base import TaskProvider
 
 log = logging.getLogger(__name__)
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-class ConfigError(ValueError):
-    pass
 
 
 class JobBusyError(RuntimeError):
@@ -74,407 +58,6 @@ class JobResult:
         return {"job": self.job, "status": self.status, "timestamp": self.timestamp,
                 "durationMs": self.duration_ms, "lastSuccess": self.last_success,
                 "values": dict(self.values), "tasks": {k: v.to_dict() for k, v in self.tasks.items()}}
-
-
-class TaskProvider:
-    """Provider extension point: validate a task config, then return normalized values."""
-    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
-        raise NotImplementedError
-
-
-class PingProvider(TaskProvider):
-    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
-        targets = config.get("targets")
-        if not isinstance(targets, dict) or not targets:
-            raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
-        values: dict[str, Any] = {}
-        def ping(name_host: tuple[Any, Any]) -> tuple[str, str]:
-            name, host = name_host
-            if not isinstance(host, str) or not host.strip():
-                return str(name), "DOWN"
-            try:
-                completed = subprocess.run(["ping", "-c", "1", "-W", str(max(1, int(timeout))), host],
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                           timeout=timeout + 1, check=False)
-                return str(name), "UP" if completed.returncode == 0 else "DOWN"
-            except (OSError, subprocess.TimeoutExpired):
-                return str(name), "DOWN"
-        items = list(targets.items())
-        for offset in range(0, len(items), 8):
-            batch = items[offset:offset + 8]
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch), thread_name_prefix="ping") as pool:
-                futures = [pool.submit(ping, item) for item in batch]
-                try:
-                    for future in concurrent.futures.as_completed(futures, timeout=timeout + 1.2):
-                        name, status = future.result()
-                        values[name] = status
-                except concurrent.futures.TimeoutError:
-                    for future in futures:
-                        future.cancel()
-        for name, _host in items:
-            values.setdefault(str(name), "DOWN")
-        online = sum(value == "UP" for value in values.values())
-        values.update(online=online, total=len(targets))
-        return ("OK" if online == len(targets) else "WARN" if online else "ERROR"), values
-
-
-class HttpProvider(TaskProvider):
-    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
-        url = config.get("url")
-        parts = urlsplit(url) if isinstance(url, str) else None
-        if not parts or parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ConfigError(f"task {task_id}: url must be an HTTP(S) URL")
-        method = str(config.get("method", "GET")).upper()
-        request_timeout = parse_duration(config.get("timeout", timeout))
-        max_bytes = int(config.get("maxResponseBytes", 1_048_576))
-        headers = dict(config.get("headers") or {})
-        auth = config.get("auth")
-        if auth:
-            auth_type = auth["type"]
-            if auth_type == "bearer":
-                token = os.environ.get(auth["tokenEnv"])
-                if not token:
-                    raise ConfigError(f"task {task_id}: environment variable {auth['tokenEnv']} is not set")
-                headers["Authorization"] = f"Bearer {token}"
-            elif auth_type == "basic":
-                username = os.environ.get(auth["usernameEnv"])
-                password = os.environ.get(auth["passwordEnv"])
-                if not username or password is None:
-                    missing = auth["usernameEnv"] if not username else auth["passwordEnv"]
-                    raise ConfigError(f"task {task_id}: environment variable {missing} is not set")
-                encoded = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
-                headers["Authorization"] = f"Basic {encoded}"
-        data = None
-        if method == "POST" and "body" in config:
-            data = json.dumps(config["body"], separators=(",", ":")).encode("utf-8")
-            headers.setdefault("Content-Type", "application/json")
-        request = urllib.request.Request(url, data=data, method=method, headers=headers)
-        status_code = 0
-        body = b""
-        try:
-            response = urllib.request.urlopen(request, timeout=request_timeout)
-        except urllib.error.HTTPError as exc:
-            response = exc
-        except (TimeoutError, socket.timeout):
-            raise ConfigError(f"task {task_id}: HTTP request timed out") from None
-        except urllib.error.URLError:
-            raise ConfigError(f"task {task_id}: HTTP connection failed") from None
-        try:
-            with response:
-                status_code = response.status
-                if config.get("extract"):
-                    body = response.read(max_bytes + 1)
-        except TimeoutError:
-            raise ConfigError(f"task {task_id}: HTTP response read timed out") from None
-        except OSError:
-            raise ConfigError(f"task {task_id}: HTTP response read failed") from None
-        if len(body) > max_bytes:
-            raise ConfigError(f"task {task_id}: response exceeds maxResponseBytes ({max_bytes})")
-        expected = config.get("expectedStatusCodes", list(range(200, 400)))
-        values = {"reachable": status_code in expected, "statusCode": status_code}
-        if not values["reachable"]:
-            return "ERROR", values
-        if not config.get("extract"):
-            return "OK", values
-        try:
-            payload = json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ConfigError(f"task {task_id}: response is not valid JSON") from None
-        return "OK", payload
-
-
-class KubernetesProvider(TaskProvider):
-    """Read aggregate cluster health through the pod's narrowly scoped service account."""
-
-    token_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
-    ca_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
-    page_limit = 500
-    max_pages = 100
-
-    def _list(self, api_path: str, timeout: float, token: str, context: ssl.SSLContext) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        continuation = ""
-        seen_tokens: set[str] = set()
-        pages = 0
-        while True:
-            query = {"limit": self.page_limit}
-            if continuation:
-                query["continue"] = continuation
-            request = urllib.request.Request(
-                f"https://kubernetes.default.svc{api_path}?{urlencode(query)}",
-                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-                    payload = json.load(response)
-            except urllib.error.HTTPError as exc:
-                raise RuntimeError(f"Kubernetes API returned HTTP {exc.code} for {api_path}") from exc
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"Kubernetes API request failed for {api_path}: {exc}") from exc
-            page_items = payload.get("items")
-            if not isinstance(page_items, list):
-                raise RuntimeError(f"Kubernetes API response for {api_path} has no items list")
-            items.extend(item for item in page_items if isinstance(item, dict))
-            continuation = str(payload.get("metadata", {}).get("continue", ""))
-            if not continuation:
-                return items
-            if continuation in seen_tokens or pages >= self.max_pages:
-                raise RuntimeError(f"Kubernetes API pagination did not finish for {api_path}")
-            seen_tokens.add(continuation)
-            pages += 1
-
-    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
-        try:
-            token = self.token_path.read_text().strip()
-            context = ssl.create_default_context(cafile=str(self.ca_path))
-        except OSError as exc:
-            raise RuntimeError("in-cluster service account credentials are unavailable") from exc
-        if not token:
-            raise RuntimeError("in-cluster service account token is empty")
-
-        nodes = self._list("/api/v1/nodes", timeout, token, context)
-        pods = self._list("/api/v1/pods", timeout, token, context)
-        deployments = self._list("/apis/apps/v1/deployments", timeout, token, context)
-        statefulsets = self._list("/apis/apps/v1/statefulsets", timeout, token, context)
-        daemonsets = self._list("/apis/apps/v1/daemonsets", timeout, token, context)
-
-        def desired(item: Mapping[str, Any]) -> int:
-            return int(item.get("spec", {}).get("replicas", 1) or 0)
-
-        nodes_ready = 0
-        values: dict[str, Any] = {}
-        for node in nodes:
-            name = str(node.get("metadata", {}).get("name", "unknown"))
-            ready = any(
-                condition.get("type") == "Ready" and condition.get("status") == "True"
-                for condition in (node.get("status", {}).get("conditions") or [])
-            )
-            nodes_ready += int(ready)
-            safe_name = "_".join(part for part in "".join(
-                ch if ch.isascii() and ch.isalnum() else "_" for ch in name
-            ).split("_") if part)
-            values[f"node_{safe_name or 'unknown'}"] = "UP" if ready else "DOWN"
-
-        pod_phases: dict[str, int] = {"Running": 0, "Pending": 0, "Failed": 0, "Unknown": 0, "Succeeded": 0}
-        pods_not_ready = 0
-        for pod in pods:
-            pod_status = pod.get("status", {})
-            phase = str(pod_status.get("phase", "Unknown"))
-            pod_phases[phase if phase in pod_phases else "Unknown"] += 1
-            if phase == "Running" and not pod.get("metadata", {}).get("deletionTimestamp"):
-                ready = any(
-                    condition.get("type") == "Ready" and condition.get("status") == "True"
-                    for condition in (pod_status.get("conditions") or [])
-                )
-                pods_not_ready += int(not ready)
-
-        deployments_ready = sum(
-            int(item.get("status", {}).get("availableReplicas", 0) or 0) >= desired(item)
-            for item in deployments
-        )
-        statefulsets_ready = sum(
-            int(item.get("status", {}).get("readyReplicas", 0) or 0) >= desired(item)
-            for item in statefulsets
-        )
-        daemonsets_ready = sum(
-            int(item.get("status", {}).get("numberReady", 0) or 0)
-            >= int(item.get("status", {}).get("desiredNumberScheduled", 0) or 0)
-            for item in daemonsets
-        )
-        workloads_healthy = (
-            bool(nodes) and nodes_ready == len(nodes)
-            and deployments_ready == len(deployments)
-            and statefulsets_ready == len(statefulsets)
-            and daemonsets_ready == len(daemonsets)
-            and pod_phases["Pending"] == 0 and pod_phases["Unknown"] == 0 and pods_not_ready == 0
-        )
-        values.update({
-            "nodesReady": nodes_ready,
-            "nodesTotal": len(nodes),
-            "podsRunning": pod_phases["Running"],
-            "podsNotReady": pods_not_ready,
-            "podsPending": pod_phases["Pending"],
-            "podsFailed": pod_phases["Failed"],
-            "podsUnknown": pod_phases["Unknown"],
-            "deploymentsAvailable": deployments_ready,
-            "deploymentsTotal": len(deployments),
-            "statefulsetsReady": statefulsets_ready,
-            "statefulsetsTotal": len(statefulsets),
-            "daemonsetsReady": daemonsets_ready,
-            "daemonsetsTotal": len(daemonsets),
-            "workloadsStatus": "HEALTHY" if workloads_healthy else "DEGRADED",
-        })
-        status = "OK" if workloads_healthy else "ERROR" if not nodes or nodes_ready == 0 else "WARN"
-        return status, values
-
-
-class InvestoryPostgresProvider(TaskProvider):
-    """Read the latest Investory performance snapshot in a read-only transaction."""
-
-    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
-        env_name = config.get("databaseUrlEnv")
-        if not isinstance(env_name, str) or not env_name.strip():
-            raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
-        conninfo = os.environ.get(env_name)
-        if not conninfo:
-            raise ConfigError(f"database connection environment variable {env_name} is unavailable")
-        try:
-            portfolio_id = int(config.get("portfolioId", 1))
-            if portfolio_id != 1:
-                raise ValueError
-        except (TypeError, ValueError) as exc:
-            raise ConfigError(f"task {task_id}: this Investory source is scoped to portfolioId 1") from exc
-
-        try:
-            import psycopg
-            from psycopg.rows import dict_row
-        except ImportError as exc:
-            raise RuntimeError("PostgreSQL support is not installed") from exc
-
-        statement_timeout_ms = max(100, int(timeout * 1000))
-        with psycopg.connect(
-            conninfo,
-            connect_timeout=max(1, int(timeout)),
-            options=f"-c statement_timeout={statement_timeout_ms}",
-            row_factory=dict_row,
-        ) as connection:
-            connection.execute("SET TRANSACTION READ ONLY")
-            row = connection.execute(
-                """SELECT snapshot_date, equity, total_profit, base_currency
-                     FROM investory.ha_investory_portfolio_latest()"""
-            ).fetchone()
-            if row is None:
-                raise RuntimeError(f"Investory performance snapshot for portfolio {portfolio_id} is unavailable")
-
-        values: dict[str, Any] = {
-            "portfolioId": portfolio_id,
-            "snapshotDate": row["snapshot_date"].isoformat() if row["snapshot_date"] else None,
-            "baseCurrency": row["base_currency"],
-            "equity": float(row["equity"]) if row["equity"] is not None else None,
-            "totalProfit": float(row["total_profit"]) if row["total_profit"] is not None else None,
-        }
-        return "OK", values
-
-
-PROVIDERS: dict[str, TaskProvider] = {
-    "ping": PingProvider(), "http": HttpProvider(), "kubernetes": KubernetesProvider(),
-    "investory_postgres": InvestoryPostgresProvider(),
-}
-
-
-def _ensure_solarman_provider() -> None:
-    if "solarman" not in PROVIDERS:
-        # Resolve lazily to avoid a circular import when solarman.py is imported directly.
-        from .solarman import SolarmanProvider
-        PROVIDERS["solarman"] = SolarmanProvider()
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    try:
-        value = yaml.safe_load(path.read_text())
-    except OSError as exc:
-        raise ConfigError(f"{path.name}: unable to read configuration") from exc
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"{path.name}: invalid YAML") from exc
-    if not isinstance(value, dict):
-        raise ConfigError(f"{path.name}: document must be a mapping")
-    return value
-
-
-def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
-    kind = config.get("type")
-    if kind == "solarman":
-        _ensure_solarman_provider()
-    if kind not in PROVIDERS:
-        raise ConfigError(f"task {task_id}: unsupported type {kind!r}")
-    if kind == "ping" and (not isinstance(config.get("targets"), dict) or not config["targets"]):
-        raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
-    if kind == "http":
-        allowed_http = {"type", "url", "method", "headers", "auth", "timeout", "body",
-                        "expectedStatusCodes", "maxResponseBytes", "extract", "health"}
-        unknown = set(config) - allowed_http
-        if unknown:
-            raise ConfigError(f"task {task_id}: unsupported HTTP option {sorted(unknown)[0]}")
-        parts = urlsplit(config.get("url", "")) if isinstance(config.get("url"), str) else None
-        if not parts or parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ConfigError(f"task {task_id}: url must be an absolute HTTP(S) URL")
-        try:
-            _ = parts.port
-        except ValueError as exc:
-            raise ConfigError(f"task {task_id}: url has an invalid port") from exc
-        if parts.username is not None or parts.password is not None:
-            raise ConfigError(f"task {task_id}: credentials must use auth environment references, not URL userinfo")
-        if str(config.get("method", "GET")).upper() not in {"GET", "POST"}:
-            raise ConfigError(f"task {task_id}: method must be GET or POST")
-        if "body" in config and str(config.get("method", "GET")).upper() != "POST":
-            raise ConfigError(f"task {task_id}: body is only supported with POST")
-        if "body" in config:
-            try:
-                json.dumps(config["body"])
-            except (TypeError, ValueError) as exc:
-                raise ConfigError(f"task {task_id}: body must contain JSON values") from exc
-        headers = config.get("headers", {})
-        if not isinstance(headers, Mapping) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in headers.items()):
-            raise ConfigError(f"task {task_id}: headers must map strings to strings")
-        try:
-            request_timeout = config.get("timeout", "10s")
-            timeout_number = float(str(request_timeout).strip().lower().removesuffix("s").removesuffix("m"))
-            if not math.isfinite(timeout_number) or timeout_number <= 0:
-                raise ValueError
-            parse_duration(request_timeout)
-        except (TypeError, ValueError, ConfigError) as exc:
-            raise ConfigError(f"task {task_id}: timeout must be a positive duration") from exc
-        max_bytes = config.get("maxResponseBytes", 1_048_576)
-        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 1 <= max_bytes <= 5_242_880:
-            raise ConfigError(f"task {task_id}: maxResponseBytes must be an integer from 1 to 5242880")
-        expected = config.get("expectedStatusCodes", list(range(200, 400)))
-        if not isinstance(expected, list) or not expected or any(isinstance(code, bool) or not isinstance(code, int) or not 100 <= code <= 599 for code in expected):
-            raise ConfigError(f"task {task_id}: expectedStatusCodes must be a non-empty list of HTTP status codes")
-        auth = config.get("auth")
-        if auth is not None:
-            if not isinstance(auth, Mapping):
-                raise ConfigError(f"task {task_id}: auth must be a mapping")
-            auth_type = auth.get("type")
-            required_auth = {"type", "tokenEnv"} if auth_type == "bearer" else {"type", "usernameEnv", "passwordEnv"} if auth_type == "basic" else set()
-            if not required_auth or set(auth) != required_auth:
-                raise ConfigError(f"task {task_id}: auth must define bearer tokenEnv or basic usernameEnv/passwordEnv")
-            if any(not isinstance(auth[field], str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", auth[field]) for field in required_auth - {"type"}):
-                raise ConfigError(f"task {task_id}: auth environment references must be valid variable names")
-        if "extract" in config:
-            try:
-                validate_extractions(config["extract"], task_id)
-            except MappingError as exc:
-                raise ConfigError(str(exc)) from None
-    if "health" in config:
-        try:
-            validate_health(config["health"], task_id)
-        except MappingError as exc:
-            raise ConfigError(str(exc)) from None
-    if "extract" in config and kind != "http":
-        raise ConfigError(f"task {task_id}: extract is currently supported for HTTP Tasks")
-    if kind == "solarman":
-        for field_name in ("appIdEnv", "appSecretEnv", "emailEnv", "passwordEnv"):
-            if not isinstance(config.get(field_name), str) or not config[field_name].strip():
-                raise ConfigError(f"task {task_id}: {field_name} must name an environment variable")
-        serial_env = config.get("deviceSerialEnv")
-        if serial_env is not None and (not isinstance(serial_env, str) or not serial_env.strip()):
-            raise ConfigError(f"task {task_id}: deviceSerialEnv must name an environment variable")
-        try:
-            max_age = int(config.get("maxDataAgeSeconds", 900))
-            if max_age < 1:
-                raise ValueError
-        except (TypeError, ValueError) as exc:
-            raise ConfigError(f"task {task_id}: maxDataAgeSeconds must be a positive integer") from exc
-    if kind == "kubernetes" and config.get("scope", "cluster") != "cluster":
-        raise ConfigError(f"task {task_id}: only cluster scope is supported")
-    if kind == "investory_postgres":
-        if not isinstance(config.get("databaseUrlEnv"), str) or not config["databaseUrlEnv"].strip():
-            raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
-        try:
-            if int(config.get("portfolioId", 1)) != 1:
-                raise ValueError
-        except (TypeError, ValueError) as exc:
-            raise ConfigError(f"task {task_id}: this Investory source is scoped to portfolioId 1") from exc
 
 
 def _cron_field(expression: str, minimum: int, maximum: int, field_name: str) -> set[int]:
@@ -590,9 +173,10 @@ class Job:
                 try:
                     if task_id in self.task_errors:
                         raise ConfigError(self.task_errors[task_id])
-                    validate_task(task_id, config)
                     provider = PROVIDERS[config["type"]]
-                    status, task_values = provider.execute(task_id, config, self.timeout)
+                    task_timeout = (parse_duration(config.get("timeout", self.timeout))
+                                   if config.get("type") == "http" else self.timeout)
+                    status, task_values = provider.execute(task_id, config, task_timeout)
                     if config.get("type") == "http" and "extract" in config and status not in {"ERROR", "UNKNOWN"}:
                         task_values = extract_values(task_values, config["extract"])
                     status = evaluate_health(status, task_values, config.get("health"))
@@ -645,69 +229,6 @@ def parse_duration(value: Any) -> float:
         return max(.1, float(text))
     except ValueError as exc:
         raise ConfigError(f"invalid duration: {value!r}") from exc
-
-
-def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
-    jobs: list[Job] = []
-    errors: list[str] = []
-    for job_file in sorted(jobs_dir.glob("*/job.yaml")):
-        directory = job_file.parent
-        job_id = directory.name
-        try:
-            config = _load_yaml(job_file)
-            name = config.get("name")
-            if not isinstance(name, str) or not name.strip():
-                raise ConfigError("job.yaml: name is required")
-            schedule = config.get("schedule", {})
-            if not isinstance(schedule, dict):
-                raise ConfigError("job.yaml: schedule must be a mapping")
-            if "cron" in schedule:
-                if "interval" in schedule:
-                    raise ConfigError("job.yaml: schedule cannot combine cron and interval")
-                timezone_name = schedule.get("timezone", "UTC")
-                if not isinstance(timezone_name, str):
-                    raise ConfigError("job.yaml: schedule.timezone must be a string")
-                next_cron_run(str(schedule["cron"]), timezone_name)
-            else:
-                parse_duration(schedule.get("interval", "60s"))
-            freshness = config.get("freshness", {})
-            if not isinstance(freshness, dict):
-                raise ConfigError("job.yaml: freshness must be a mapping")
-            if "maxAge" in freshness:
-                age_text = str(freshness["maxAge"]).strip().lower()
-                amount_text = age_text[:-1] if age_text.endswith(("s", "m")) else age_text
-                try:
-                    amount = float(amount_text)
-                    parse_duration(freshness["maxAge"])
-                except (TypeError, ValueError, ConfigError) as exc:
-                    raise ConfigError("job.yaml: freshness.maxAge must be a positive duration") from exc
-                if not math.isfinite(amount) or amount <= 0:
-                    raise ConfigError("job.yaml: freshness.maxAge must be a positive duration")
-            validate_entity_metadata(config.get("mqtt", {}), job_id)
-            tasks: dict[str, dict[str, Any]] = {}
-            task_errors: dict[str, str] = {}
-            for task_file in sorted(directory.glob("*.yaml")):
-                if task_file.name == "job.yaml":
-                    continue
-                task_id = task_file.stem
-                try:
-                    task_config = _load_yaml(task_file)
-                    validate_task(task_id, task_config)
-                    tasks[task_id] = task_config
-                except Exception as exc:
-                    message = str(exc) if isinstance(exc, (ConfigError, MappingError)) else "invalid task configuration"
-                    task_errors[task_id] = message
-                    tasks[task_id] = {}
-                    errors.append(f"{job_id}/{task_id}: {message}")
-                    log.error("invalid task configuration %s/%s: %s", job_id, task_id, message)
-            validate_discovery_identifiers(tasks, config.get("mqtt", {}), job_id)
-            jobs.append(Job(job_id, name, directory, config, tasks, task_errors=task_errors))
-        except Exception as exc:
-            message = f"{job_id}: {exc}"
-            log.error("invalid job configuration %s", message)
-            errors.append(message)
-            jobs.append(Job(job_id, job_id, directory, {}, {}, False, message))
-    return jobs, errors
 
 
 class JobEngine:
@@ -772,3 +293,14 @@ class JobEngine:
         self.stop_event.set()
         for thread in self.threads:
             thread.join(timeout=2)
+
+def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
+    """Compatibility export; configuration schemas are owned by config.py."""
+    from .config import validate_task as validate
+    validate(task_id, config)
+
+
+def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
+    """Compatibility export for callers that historically imported from core."""
+    from .config import discover_jobs as discover
+    return discover(jobs_dir)

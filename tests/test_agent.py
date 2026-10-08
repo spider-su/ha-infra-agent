@@ -1,4 +1,5 @@
 import json
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -23,7 +24,7 @@ def test_job_discovery_and_task_parsing(tmp_path):
 def test_ping_result_map_generation(monkeypatch):
     class Completed:
         returncode = 0
-    monkeypatch.setattr("home_infra_agent.core.subprocess.run", lambda *a, **k: Completed())
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: Completed())
     status, values = PingProvider().execute("nodes", {"targets": {"a": "127.0.0.1", "b": "127.0.0.2"}}, 1)
     assert status == "OK"
     assert values == {"a": "UP", "b": "UP", "online": 2, "total": 2}
@@ -188,7 +189,7 @@ def test_ping_is_parallel_with_bounded_workers(monkeypatch):
         with guard:
             active -= 1
         return Completed()
-    monkeypatch.setattr("home_infra_agent.core.subprocess.run", fake_ping)
+    monkeypatch.setattr("subprocess.run", fake_ping)
     status, values = PingProvider().execute("nodes", {"targets": {f"n{i}": "host" for i in range(20)}}, 2)
     assert status == "OK" and values["online"] == values["total"] == 20
     assert 1 < peak <= 8
