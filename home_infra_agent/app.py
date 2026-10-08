@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlparse
 import yaml
 from dotenv import load_dotenv
 
-from .core import JobEngine, discover_jobs
+from .core import JobBusyError, JobEngine, discover_jobs
 from .mqtt import MqttAdapter
 
 log = logging.getLogger(__name__)
@@ -76,21 +76,34 @@ class AgentHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parts = urlparse(self.path).path.strip("/").split("/")
         if len(parts) == 4 and parts[0:2] == ["api", "jobs"] and parts[3] == "run":
+            if not self._same_origin():
+                self._json({"error": "same-origin request required"}, 403)
+                return
             job_id = unquote(parts[2])
             if job_id not in self.server.engine.jobs:
                 self._json({"error": "job not found"}, 404)
                 return
-            result = self.server.engine.run_job(job_id)
-            self._json(result.to_dict())
+            try:
+                result = self.server.engine.run_job(job_id)
+                self._json(result.to_dict())
+            except JobBusyError:
+                self._json({"error": "job is already running"}, 409)
         else:
             self._json({"error": "not found"}, 404)
+
+    def _same_origin(self):
+        from urllib.parse import urlsplit
+        source = self.headers.get("Origin") or self.headers.get("Referer")
+        if not source:
+            return False
+        return urlsplit(source).netloc.lower() == self.headers.get("Host", "").lower()
 
     def _html(self):
         data = [{"id": job.id, "name": job.name} for job in self.server.engine.jobs.values()]
         payload = json.dumps(data).replace("<", "\\u003c")
         html = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Home Infra Agent</title>
 <style>body{{font:16px system-ui;max-width:900px;margin:2rem auto;padding:0 1rem;color:#20252b}}nav{{display:flex;gap:.5rem;flex-wrap:wrap}}button{{padding:.55rem .8rem;cursor:pointer}}.active{{font-weight:bold;background:#dcecff}}pre{{white-space:pre-wrap;background:#f4f6f8;padding:1rem;border-radius:6px}}.status{{font-weight:bold}}</style></head><body><h1>Home Infra Agent <small id="mqtt"></small></h1><nav id="tabs"></nav><main id="detail">Loading…</main>
-<script>const jobs={payload};let selected=jobs[0]?.id;function tabs(){{document.querySelector('#tabs').innerHTML=jobs.map(j=>`<button class="${{j.id===selected?'active':''}}" onclick="selected='${{j.id}}';render()">${{j.name}}</button>`).join('')}}async function render(){{tabs();if(!selected)return;let r=await fetch('/api/jobs/'+encodeURIComponent(selected)),j=await r.json();let health=await (await fetch('/health')).json();document.querySelector('#mqtt').textContent='MQTT: '+(health.mqttConnected?'Connected':'Disconnected');let next=j.nextRun?new Date(j.nextRun*1000).toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit'}}):'—';document.querySelector('#detail').innerHTML=`<h2>${{j.name}}</h2><div class="status">${{j.result?.status||'UNKNOWN'}}</div><p>Last run: ${{j.result?.timestamp||'Never'}} · Duration: ${{j.result?.durationMs??'—'}} ms · Next run: ~${{next}} · Last success: ${{j.result?.lastSuccess||'Never'}}</p><h3>Tasks</h3><pre>${{JSON.stringify(j.result?.tasks||{{}},null,2)}}</pre><h3>Current values</h3><pre>${{JSON.stringify(j.result?.values||{{}},null,2)}}</pre><button onclick="runNow()">Run now</button>`}}async function runNow(){{await fetch('/api/jobs/'+encodeURIComponent(selected)+'/run',{{method:'POST'}});render()}}render();setInterval(render,15000)</script></body></html>'''
+<script>const jobs={payload};let selected=jobs[0]?.id;const tabsEl=document.querySelector('#tabs'),detail=document.querySelector('#detail');function el(tag,text,cls){{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n}}function tabs(){{tabsEl.replaceChildren(...jobs.map(j=>{{const b=el('button',j.name,j.id===selected?'active':'');b.addEventListener('click',()=>{{selected=j.id;render()}});return b}}))}}async function render(){{tabs();if(!selected)return;try{{let r=await fetch('/api/jobs/'+encodeURIComponent(selected)),j=await r.json();let health=await (await fetch('/health')).json();document.querySelector('#mqtt').textContent='MQTT: '+(health.mqttConnected?'Connected':'Disconnected');let next=j.nextRun?new Date(j.nextRun*1000).toLocaleTimeString([],{{hour:'2-digit',minute:'2-digit'}}):'—';const content=el('div');content.append(el('h2',j.name),el('div',j.result?.status||'UNKNOWN','status'),el('p','Last run: '+(j.result?.timestamp||'Never')+' · Duration: '+(j.result?.durationMs??'—')+' ms · Next run: ~'+next+' · Last success: '+(j.result?.lastSuccess||'Never')),el('h3','Tasks'));const tasks=el('pre',JSON.stringify(j.result?.tasks||{{}},null,2));content.append(tasks,el('h3','Current values'),el('pre',JSON.stringify(j.result?.values||{{}},null,2)));const run=el('button','Run now');run.addEventListener('click',runNow);content.append(run);detail.replaceChildren(content)}}catch(e){{detail.replaceChildren(el('p','Unable to load job details.'))}}}}async function runNow(){{const response=await fetch('/api/jobs/'+encodeURIComponent(selected)+'/run',{{method:'POST',credentials:'same-origin'}});if(!response.ok){{const data=await response.json();detail.prepend(el('p',data.error||'Run failed.'))}}await render()}}render();setInterval(render,15000)</script></body></html>'''
         body = html.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

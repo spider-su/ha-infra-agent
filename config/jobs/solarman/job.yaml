@@ -2,6 +2,8 @@ name: Solarman Solar and Battery
 schedule:
   interval: 3600s
 timeout: 15s
+freshness:
+  maxAge: 7200s
 mqtt:
   enabled: true
   topic: home/solarman

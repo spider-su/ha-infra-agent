@@ -55,7 +55,7 @@ targets:
   home-lab-2: 192.168.1.53
 ```
 
-HTTP tasks use `type: http`, `url: https://host/health`, and optionally `method` and `headers`. Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, duration, optional error, and a values map that supports native JSON booleans, numbers, strings, and timestamps. Job values include task-qualified keys plus unambiguous short keys.
+HTTP tasks use `type: http`, `url: https://host/health`, and optionally `method` and `headers`. Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, duration, optional error, and a values map that supports native JSON booleans, numbers, strings, and timestamps. Job values include task-qualified keys plus short keys only when that field occurs in one task. If two tasks return the same short field name, both qualified keys remain and the ambiguous alias is omitted regardless of task order. Runtime exception details are redacted from result payloads and logs; configuration validation errors remain descriptive.
 
 The `kubernetes` task provider reads cluster nodes, pods, deployments, StatefulSets, and DaemonSets from the in-cluster Kubernetes API. It expects the standard projected service-account token and CA files and verifies the API certificate. The ops-autopilot chart enables this provider with a read-only ClusterRole limited to listing those five resource types; it never reads Secrets, ConfigMaps, logs, or Events. Outside Kubernetes, the task reports an error because no in-cluster service-account credentials are available.
 
@@ -67,7 +67,9 @@ K3s workload health uses node readiness, controller availability, and pending, u
 
 Configure `mqtt.host`, `port`, optional `username`, `passwordEnv`, and `discoveryPrefix` in `application.yaml`. The password is resolved from the named environment variable at startup; do not put credentials in YAML or source control. The sample configuration disables MQTT until a broker is configured. Set `mqtt.enabled: true`, then provide `HIA_MQTT_PASSWORD` through systemd EnvironmentFile or your container secret mechanism. Keep the broker on a private network; this service does not expose it.
 
-The adapter publishes retained discovery configs below `homeassistant/<component>/<stable-id>/config` and one retained JSON state per job at `<job mqtt topic>/state` (Proxmox: `home/proxmox/state`). Entities share one HA device identifier per job. Node UP/DOWN values become binary sensors; counts and other values become sensors. The first execution publishes the entities for values produced by that job. MQTT reconnect republishes discovery and the latest state. A retained Last Will availability topic reports agent online/offline; a broker will retain each job's latest state until a new result arrives.
+The adapter publishes retained discovery configs below `homeassistant/<component>/<stable-id>/config` and one retained JSON state per job at `<job mqtt topic>/state` (Proxmox: `home/proxmox/state`). Existing discovery topic paths, unique IDs, device identifiers, state topics, field names, and entity types are retained; the `tests/fixtures/mqtt_discovery_baseline.json` golden fixture protects the current Proxmox, Investory, and Solarman entity configs. Two additional job sensors report last successful execution and result freshness. Entities share one HA device identifier per job. Node UP/DOWN values become binary sensors; counts and other values become sensors. A single publisher worker keeps MQTT I/O out of Job execution and coalesces pending results per job. Unchanged discovery payloads are not resent during ordinary runs; reconnect forces discovery replay and republishes each latest result.
+
+Agent availability is separate from Job status and freshness. The retained Last Will reports the agent offline if its broker connection drops; clean shutdown publishes retained `offline`. Each configured job has a `freshness.maxAge` and its entities use the same MQTT expiry. A failed or stale run clears previously known values from the retained state; freshness is calculated from the last successful `OK` or `WARN` result, while top-level `ERROR`, `WARN`, and Solarman's own `source_status: STALE` remain distinct. The currently configured policies are 180 seconds for Proxmox, 72 hours for the weekday Investory job, and 2 hours for Solarman. Jobs without this optional setting keep working and report freshness as `UNKNOWN`.
 
 The Proxmox device exposes a status, last-run timestamp, duration, each node's UP/DOWN value, `online`, and `total`. Job/Task providers have no Home Assistant dependency.
 
@@ -78,7 +80,9 @@ The Proxmox device exposes a status, last-run timestamp, duration, each node's U
 - `POST /api/jobs/{id}/run` — run one job immediately
 - `GET /health` — process health and MQTT connection state
 
-The web UI is server-rendered HTML with a small inline script. It is read-only except for the explicit Run now action; it does not edit configuration.
+The web UI is server-rendered HTML with a small inline script. Untrusted job names and result data are inserted with DOM `textContent`, not HTML parsing. The Run now endpoint requires a matching `Origin` (or same-origin `Referer`) and returns HTTP 409 if that Job is already active. It is read-only except for the explicit Run now action; it does not edit configuration.
+
+Each Job has a non-blocking execution lock shared by scheduled and manual runs. A run already in progress is skipped by the scheduler and rejected with HTTP 409 for a manual request; different Jobs can run concurrently. Ping checks use at most eight workers and a bounded wait, preserving `UP`, `DOWN`, `online`, and `total` result meanings.
 
 ## Cloud VM deployment
 
