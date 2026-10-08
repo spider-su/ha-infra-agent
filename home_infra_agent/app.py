@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 from .core import JobBusyError, JobEngine
 from .config import discover_jobs
-from .mqtt import MqttAdapter
+from .mqtt import MqttAdapter, freshness_data
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +27,8 @@ def load_app_config(path: Path) -> dict:
     if not isinstance(config, dict):
         raise ValueError("application.yaml must contain a mapping")
     mqtt = config.setdefault("mqtt", {})
+    if "password" in mqtt:
+        raise ValueError("mqtt.password is not allowed; use passwordEnv and provide the value through the environment")
     if "passwordEnv" in mqtt:
         mqtt["password"] = os.environ.get(mqtt.pop("passwordEnv"), "")
     return config
@@ -57,15 +59,21 @@ class AgentHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         jobs = self.server.engine.jobs
         if path == "/health":
-            self._json({"status": "ok", "mqttConnected": self.server.adapter.is_connected})
+            self._json({"status": "ok", "mqttConnected": self.server.adapter.is_connected,
+                        "loadedJobs": len(jobs),
+                        "invalidJobs": sum(not job.valid for job in jobs.values())})
         elif path == "/api/jobs":
-            self._json([{"id": j.id, "name": j.name, "status": j.last_result.status if j.last_result else "UNKNOWN",
-                         "lastRun": j.last_result.timestamp if j.last_result else None} for j in jobs.values()])
+            self._json([{"id": job.id, "name": job.name, "valid": job.valid,
+                         "status": job.last_result.status if job.last_result else "UNKNOWN",
+                         "lastRun": job.last_result.timestamp if job.last_result else None,
+                         "lastSuccess": job.last_result.last_success if job.last_result else None,
+                         "freshness": freshness_data(job, job.last_result)} for job in jobs.values()])
         elif path.startswith("/api/jobs/"):
             job = jobs.get(unquote(path.split("/")[3]))
             if job:
                 self._json({"id": job.id, "name": job.name, "valid": job.valid,
                             "nextRun": job.next_run_epoch,
+                            "freshness": freshness_data(job, job.last_result),
                             "result": job.last_result.to_dict() if job.last_result else None})
             else:
                 self._json({"error": "job not found"}, 404)

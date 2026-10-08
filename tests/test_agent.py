@@ -324,3 +324,125 @@ def test_explicit_mqtt_entity_metadata_controls_component_and_payloads():
     assert config["name"] == "Service state"
     assert config["payload_on"] == "READY" and config["payload_off"] == "DOWN"
     assert config["icon"] == "mdi:heart-pulse"
+
+
+def test_health_and_job_api_expose_safe_operational_diagnostics(tmp_path):
+    from datetime import datetime, timezone
+    from urllib.request import urlopen
+    from home_infra_agent.app import AgentServer
+    from home_infra_agent.core import JobResult
+
+    secret = "private-config-value"
+    good = Job("good", "Healthy Job", tmp_path, {
+        "freshness": {"maxAge": "60s"}, "mqtt": {"password": secret},
+    }, {})
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stale_success = "2000-01-01T00:00:00+00:00"
+    good.last_result = JobResult("good", "OK", now, 12, {"ready": True}, {}, now)
+    stale = Job("stale", "Stale Job", tmp_path, {"freshness": {"maxAge": "60s"}}, {})
+    stale.last_result = JobResult("stale", "ERROR", now, 8, {}, {}, stale_success)
+    bad = Job("bad", "Invalid Job", tmp_path, {}, {}, False, "invalid")
+    adapter = type("Adapter", (), {"is_connected": False})()
+    server = AgentServer(("127.0.0.1", 0), JobEngine([good, stale, bad]), adapter)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/health") as response:
+            health = json.load(response)
+        assert health == {"status": "ok", "mqttConnected": False, "loadedJobs": 3, "invalidJobs": 1}
+
+        with urlopen(base + "/api/jobs") as response:
+            jobs = json.load(response)
+        good_summary = next(job for job in jobs if job["id"] == "good")
+        assert good_summary["valid"] is True
+        assert good_summary["status"] == "OK"
+        assert good_summary["lastRun"] == now
+        assert good_summary["lastSuccess"] == now
+        assert good_summary["freshness"]["status"] == "FRESH"
+        stale_summary = next(job for job in jobs if job["id"] == "stale")
+        assert stale_summary["status"] == "ERROR"
+        assert stale_summary["lastSuccess"] == stale_success
+        assert stale_summary["freshness"]["status"] == "STALE"
+
+        with urlopen(base + "/api/jobs/good") as response:
+            detail = json.load(response)
+        assert detail["freshness"]["status"] == "FRESH"
+        with urlopen(base + "/api/jobs/stale") as response:
+            stale_detail = json.load(response)
+        assert stale_detail["freshness"]["status"] == "STALE"
+        assert secret not in json.dumps([health, jobs, detail, stale_detail])
+        assert "mqtt" not in json.dumps(detail)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
+def test_repeated_job_failures_preserve_last_success_and_recover(monkeypatch, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    import home_infra_agent.core as core
+
+    base = datetime(2026, 10, 8, tzinfo=timezone.utc)
+    ticks = iter(range(20))
+    monkeypatch.setattr(core, "utc_now", lambda: (base + timedelta(seconds=next(ticks))).isoformat())
+    outcomes = iter([
+        ("OK", {"value": 1}),
+        ("ERROR", {"source_status": "ERROR"}),
+        ("ERROR", {"source_status": "ERROR"}),
+        ("OK", {"value": 2}),
+    ])
+
+    class Flaky:
+        def execute(self, task_id, config, timeout):
+            status, values = next(outcomes)
+            return status, values
+
+    class Stable:
+        def execute(self, task_id, config, timeout):
+            return "OK", {"unrelated": True}
+
+    monkeypatch.setitem(__import__("home_infra_agent.core", fromlist=["PROVIDERS"]).PROVIDERS, "flaky", Flaky())
+    monkeypatch.setitem(__import__("home_infra_agent.core", fromlist=["PROVIDERS"]).PROVIDERS, "stable", Stable())
+    job = Job("recovery", "Recovery", tmp_path, {}, {
+        "source": {"type": "flaky"}, "unrelated": {"type": "stable"},
+    })
+    engine = JobEngine([job])
+
+    first = engine.run_job("recovery")
+    assert first.status == "OK" and first.last_success is not None
+    last_success = first.last_success
+
+    failed = engine.run_job("recovery")
+    assert failed.status == "ERROR"
+    assert failed.tasks["source"].status == "ERROR"
+    assert failed.values["unrelated.unrelated"] is True
+    assert failed.last_success == last_success
+
+    repeated = engine.run_job("recovery")
+    assert repeated.status == "ERROR" and repeated.last_success == last_success
+
+    recovered = engine.run_job("recovery")
+    assert recovered.status == "OK"
+    assert recovered.last_success != last_success
+    assert recovered.values["source.value"] == 2
+    assert recovered.values["unrelated.unrelated"] is True
+
+
+
+def test_every_task_failure_produces_error_without_a_last_success(monkeypatch, tmp_path):
+    import home_infra_agent.core as core
+
+    class Failure:
+        def execute(self, task_id, config, timeout):
+            raise RuntimeError("private upstream detail")
+
+    monkeypatch.setitem(core.PROVIDERS, "all-fail", Failure())
+    job = Job("all-fail", "All tasks fail", tmp_path, {}, {
+        "one": {"type": "all-fail"}, "two": {"type": "all-fail"},
+    })
+    result = JobEngine([job]).run_job("all-fail")
+    assert result.status == "ERROR"
+    assert all(task.status == "ERROR" for task in result.tasks.values())
+    assert result.last_success is None
+    assert all(task.error == "RuntimeError (details redacted)" for task in result.tasks.values())

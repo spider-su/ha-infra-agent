@@ -118,11 +118,14 @@ def next_cron_run(expression: str, timezone_name: str, after: datetime | None = 
         zone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
         raise ConfigError(f"invalid schedule timezone: {timezone_name!r}") from exc
-    cursor = (after or datetime.now(timezone.utc)).astimezone(zone)
-    cursor = cursor.replace(second=0, microsecond=0, tzinfo=zone) + timedelta(minutes=1)
+    cursor = after or datetime.now(timezone.utc)
+    if cursor.tzinfo is None:
+        cursor = cursor.replace(tzinfo=zone)
+    cursor = cursor.astimezone(timezone.utc).replace(second=0, microsecond=0) + timedelta(minutes=1)
     for _ in range(366 * 24 * 60):
-        if cron_matches(expression, cursor):
-            return cursor
+        local_time = cursor.astimezone(zone)
+        if cron_matches(expression, local_time):
+            return local_time
         cursor += timedelta(minutes=1)
     raise ConfigError("schedule.cron has no matching time within one year")
 
@@ -292,7 +295,7 @@ class JobEngine:
     def stop(self) -> None:
         self.stop_event.set()
         for thread in self.threads:
-            thread.join(timeout=2)
+            thread.join()
 
 def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
     """Compatibility export; configuration schemas are owned by config.py."""

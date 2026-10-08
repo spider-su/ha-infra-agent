@@ -155,3 +155,20 @@ def test_http_timeout_is_bounded():
 def test_http_configuration_validation(config):
     with pytest.raises(ConfigError):
         validate_task("status", config)
+
+
+def test_connection_refused_and_invalid_credentials_are_safe():
+    from http.server import HTTPServer
+
+    server = HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    port = server.server_port
+    server.server_close()
+    refused = run_http({"type": "http", "url": f"http://127.0.0.1:{port}/"})
+    assert refused.status == "ERROR"
+    assert refused.tasks["status"].error == "task status: HTTP connection failed"
+
+    with serve({"error": "credential rejected: private-value"}, status=401) as (url, _):
+        denied = run_http({"type": "http", "url": url})
+    assert denied.status == "ERROR"
+    assert denied.tasks["status"].values == {"reachable": False, "statusCode": 401}
+    assert "private-value" not in json.dumps(denied.to_dict())
