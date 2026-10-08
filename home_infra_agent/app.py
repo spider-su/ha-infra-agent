@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import yaml
+from dotenv import load_dotenv
 
 from .core import JobEngine, discover_jobs
 from .mqtt import MqttAdapter
@@ -63,7 +64,7 @@ class AgentHandler(BaseHTTPRequestHandler):
             job = jobs.get(unquote(path.split("/")[3]))
             if job:
                 self._json({"id": job.id, "name": job.name, "valid": job.valid,
-                            "nextRun": job.last_run_epoch + job.interval if job.last_run_epoch else None,
+                            "nextRun": job.next_run_epoch,
                             "result": job.last_result.to_dict() if job.last_result else None})
             else:
                 self._json({"error": "job not found"}, 404)
@@ -99,6 +100,7 @@ class AgentHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    load_dotenv(override=False)
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config_dir = Path(os.getenv("HIA_CONFIG_DIR", "/etc/home-infra-agent"))
     app_config = load_app_config(config_dir / "application.yaml")
