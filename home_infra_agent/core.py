@@ -289,6 +289,13 @@ PROVIDERS: dict[str, TaskProvider] = {
 }
 
 
+def _ensure_solarman_provider() -> None:
+    if "solarman" not in PROVIDERS:
+        # Resolve lazily to avoid a circular import when solarman.py is imported directly.
+        from .solarman import SolarmanProvider
+        PROVIDERS["solarman"] = SolarmanProvider()
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text())
@@ -301,12 +308,27 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
     kind = config.get("type")
+    if kind == "solarman":
+        _ensure_solarman_provider()
     if kind not in PROVIDERS:
         raise ConfigError(f"task {task_id}: unsupported type {kind!r}")
     if kind == "ping" and (not isinstance(config.get("targets"), dict) or not config["targets"]):
         raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
     if kind == "http" and not str(config.get("url", "")).startswith(("http://", "https://")):
         raise ConfigError(f"task {task_id}: url must be an HTTP(S) URL")
+    if kind == "solarman":
+        for field_name in ("appIdEnv", "appSecretEnv", "emailEnv", "passwordEnv"):
+            if not isinstance(config.get(field_name), str) or not config[field_name].strip():
+                raise ConfigError(f"task {task_id}: {field_name} must name an environment variable")
+        serial_env = config.get("deviceSerialEnv")
+        if serial_env is not None and (not isinstance(serial_env, str) or not serial_env.strip()):
+            raise ConfigError(f"task {task_id}: deviceSerialEnv must name an environment variable")
+        try:
+            max_age = int(config.get("maxDataAgeSeconds", 900))
+            if max_age < 1:
+                raise ValueError
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"task {task_id}: maxDataAgeSeconds must be a positive integer") from exc
     if kind == "kubernetes" and config.get("scope", "cluster") != "cluster":
         raise ConfigError(f"task {task_id}: only cluster scope is supported")
     if kind == "investory_postgres":
