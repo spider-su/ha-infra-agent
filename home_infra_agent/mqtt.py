@@ -23,6 +23,8 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
     entities = [("sensor", "status", "Status", "status"), ("sensor", "last_run", "Last run", "timestamp"),
                 ("sensor", "duration_ms", "Duration", "durationMs")]
     values = result.values if result else {}
+    metadata = mqtt.get("entities", {})
+    metadata_fields = {"name", "unit_of_measurement", "device_class", "state_class", "expire_after", "icon"}
     for key, value in values.items():
         key_str = str(key)
         slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
@@ -41,6 +43,10 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
             config.update(payload_on="UP", payload_off="DOWN")
         if key == "duration_ms":
             config["unit_of_measurement"] = "ms"
+        entity_metadata = metadata.get(key, {}) if isinstance(metadata, dict) else {}
+        if isinstance(entity_metadata, dict):
+            config.update({field: value for field, value in entity_metadata.items()
+                           if field in metadata_fields and value is not None})
         if key == "snapshotDate":
             config["device_class"] = "date"
         if key in {"totalDeposits", "totalWithdrawals", "netDeposits", "totalCash",

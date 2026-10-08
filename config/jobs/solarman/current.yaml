@@ -1,0 +1,9 @@
+type: solarman
+appIdEnv: SOLARMAN_APP_ID
+appSecretEnv: SOLARMAN_APP_SECRET
+emailEnv: SOLARMAN_EMAIL
+passwordEnv: SOLARMAN_PASSWORD
+# Optional. Set this environment variable if discovery finds more than one device.
+deviceSerialEnv: SOLARMAN_DEVICE_SERIAL
+# Solarman data is normally refreshed every few minutes; mark older readings stale.
+maxDataAgeSeconds: 900

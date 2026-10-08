@@ -1,0 +1,31 @@
+name: Solarman Solar and Battery
+schedule:
+  interval: 3600s
+timeout: 15s
+mqtt:
+  enabled: true
+  topic: home/solarman
+  device:
+    name: Solarman Solar and Battery
+    manufacturer: Solarman
+    model: Cloud API inverter telemetry
+  entities:
+    solar_production_total: {name: Solar production total, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    solar_production_today: {name: Solar production today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    pv_power: {name: PV power, device_class: power, state_class: measurement, unit_of_measurement: W, expire_after: 7200}
+    grid_export_total: {name: Grid export total, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    grid_export_today: {name: Grid export today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    grid_import_total: {name: Grid import total, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    grid_import_today: {name: Grid import today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    home_consumption_power: {name: Home consumption power, device_class: power, state_class: measurement, unit_of_measurement: W, expire_after: 7200}
+    home_consumption_total_raw: {name: Home consumption total raw API counter, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    home_consumption_today: {name: Home consumption today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    battery_state_of_charge: {name: Battery state of charge, device_class: battery, state_class: measurement, unit_of_measurement: "%", expire_after: 7200}
+    battery_charge_total: {name: Battery charge total, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    battery_charge_today: {name: Battery charge today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    battery_discharge_total: {name: Battery discharge total, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    battery_discharge_today: {name: Battery discharge today, device_class: energy, state_class: total_increasing, unit_of_measurement: kWh, expire_after: 7200}
+    inverter_status: {name: Inverter status, expire_after: 7200}
+    source_status: {name: Solarman source status, expire_after: 7200}
+    collection_time: {name: Solarman collection time, device_class: timestamp, expire_after: 7200}
+    source_age_seconds: {name: Solarman source age, unit_of_measurement: s, state_class: measurement, expire_after: 7200}
