@@ -101,6 +101,66 @@ def test_basic_auth_reads_environment_and_never_echoes_password(monkeypatch):
     assert "secret-password" not in json.dumps(result.to_dict())
 
 
+def test_authenticated_http_redirect_drops_credentials_across_origins(monkeypatch):
+    from http.server import ThreadingHTTPServer
+
+    monkeypatch.setenv("REDIRECT_TOKEN", "private-token")
+    received = {}
+
+    class SinkHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received["cross_origin"] = self.headers.get("Authorization")
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *_):
+            pass
+
+    sink = ThreadingHTTPServer(("127.0.0.1", 0), SinkHandler)
+
+    class SourceHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/cross-origin":
+                location = f"http://127.0.0.1:{sink.server_port}/receive"
+            elif self.path == "/same-origin":
+                location = f"http://127.0.0.1:{self.server.server_port}/receive"
+            else:
+                received["same_origin"] = self.headers.get("Authorization")
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *_):
+            pass
+
+    source = ThreadingHTTPServer(("127.0.0.1", 0), SourceHandler)
+    servers = (sink, source)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
+    for thread in threads:
+        thread.start()
+    try:
+        auth = {"type": "bearer", "tokenEnv": "REDIRECT_TOKEN"}
+        for path in ("cross-origin", "same-origin"):
+            status, values = HttpProvider().execute(
+                "redirect", {"url": f"http://127.0.0.1:{source.server_port}/{path}", "auth": auth}, 2
+            )
+            assert status == "OK" and values["statusCode"] == 200
+        assert received["cross_origin"] is None
+        assert received["same_origin"] == "Bearer private-token"
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
+        for thread in threads:
+            thread.join(2)
+
+
 def test_missing_auth_environment_variable_is_useful_and_safe(monkeypatch):
     monkeypatch.delenv("MISSING_API_TOKEN", raising=False)
     with serve({"ok": True}) as (url, _):
@@ -141,6 +201,10 @@ def test_http_timeout_is_bounded():
         duration = time.monotonic() - started
     assert result.status == "ERROR"
     assert duration < .28
+
+
+def test_http_timeout_validation_accepts_subsecond_duration():
+    validate_task("status", {"type": "http", "url": "https://example.invalid", "timeout": "500ms"})
 
 
 @pytest.mark.parametrize("config", [

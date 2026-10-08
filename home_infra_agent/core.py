@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -219,18 +220,27 @@ class Job:
 
 
 def parse_duration(value: Any) -> float:
-    if isinstance(value, (int, float)):
-        return max(0.1, float(value))
-    text = str(value).strip().lower()
     try:
-        if text.endswith("ms"):
-            return max(.1, float(text[:-2]) / 1000)
-        if text.endswith("s"):
-            return max(.1, float(text[:-1]))
-        if text.endswith("m"):
-            return max(.1, float(text[:-1]) * 60)
-        return max(.1, float(text))
-    except ValueError as exc:
+        if isinstance(value, bool):
+            raise ValueError
+        if isinstance(value, (int, float)):
+            seconds = float(value)
+        else:
+            text = str(value).strip().lower()
+            if text.endswith("ms"):
+                seconds = float(text[:-2]) / 1000
+            elif text.endswith("s"):
+                seconds = float(text[:-1])
+            elif text.endswith("m"):
+                seconds = float(text[:-1]) * 60
+            elif text.endswith("h"):
+                seconds = float(text[:-1]) * 3600
+            else:
+                seconds = float(text)
+        if not math.isfinite(seconds) or seconds <= 0:
+            raise ValueError
+        return max(.1, seconds)
+    except (OverflowError, TypeError, ValueError) as exc:
         raise ConfigError(f"invalid duration: {value!r}") from exc
 
 

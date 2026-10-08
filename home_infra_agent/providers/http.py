@@ -8,9 +8,27 @@ import socket
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from ..errors import ConfigError
 from .base import TaskProvider
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    parts = urlsplit(url)
+    default_port = 443 if parts.scheme.lower() == "https" else 80 if parts.scheme.lower() == "http" else None
+    return parts.scheme.lower(), parts.hostname.lower() if parts.hostname else None, parts.port or default_port
+
+
+class _CredentialSafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep normal redirects but do not forward credentials to another origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and _origin(req.full_url) != _origin(newurl):
+            redirected.remove_header("Authorization")
+            redirected.remove_header("Proxy-Authorization")
+        return redirected
 
 
 class HttpProvider(TaskProvider):
@@ -44,7 +62,8 @@ class HttpProvider(TaskProvider):
         status_code = 0
         body = b""
         try:
-            response = urllib.request.urlopen(request, timeout=request_timeout)
+            opener = urllib.request.build_opener(_CredentialSafeRedirectHandler())
+            response = opener.open(request, timeout=request_timeout)
         except urllib.error.HTTPError as exc:
             response = exc
         except (TimeoutError, socket.timeout):

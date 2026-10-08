@@ -105,6 +105,32 @@ def test_invalid_mqtt_entity_config_isolated_to_its_job(tmp_path):
     assert not jobs[0].valid and jobs[1].valid
 
 
+def test_job_duration_validation_rejects_invalid_values_and_accepts_supported_units(tmp_path):
+    for field, value in (("timeout", "0s"), ("interval", "-1m"), ("maxAge", "NaN")):
+        jobs_dir = tmp_path / field / "jobs"
+        job_dir = jobs_dir / "sample"
+        job_dir.mkdir(parents=True)
+        if field == "interval":
+            content = f"name: Sample\nschedule:\n  interval: {value}\n"
+        elif field == "maxAge":
+            content = f"name: Sample\nfreshness:\n  maxAge: {value}\n"
+        else:
+            content = f"name: Sample\ntimeout: {value}\n"
+        (job_dir / "job.yaml").write_text(content)
+        jobs, errors = discover_jobs(jobs_dir)
+        assert errors and len(jobs) == 1 and not jobs[0].valid
+
+    jobs_dir = tmp_path / "valid" / "jobs"
+    job_dir = jobs_dir / "sample"
+    job_dir.mkdir(parents=True)
+    (job_dir / "job.yaml").write_text(
+        "name: Sample\ntimeout: 1h\nschedule:\n  interval: 500ms\nfreshness:\n  maxAge: 2h\n"
+    )
+    jobs, errors = discover_jobs(jobs_dir)
+    assert not errors and jobs[0].valid
+    assert jobs[0].interval == 0.5 and jobs[0].timeout == 3600
+
+
 def test_mqtt_password_must_be_loaded_from_environment(tmp_path, monkeypatch):
     from home_infra_agent.app import load_app_config
 
