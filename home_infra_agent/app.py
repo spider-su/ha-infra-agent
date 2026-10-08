@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlparse
 import yaml
 from dotenv import load_dotenv
 
-from .core import JobBusyError, JobEngine
+from .core import JobBusyError, JobEngine, utc_now
 from .config import discover_jobs
 from .mqtt import MqttAdapter, freshness_data
 
@@ -55,25 +55,55 @@ class AgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    @staticmethod
+    def _job_summary(job):
+        with job.lock:
+            result = job.last_result
+            last_attempt = job.last_attempt
+            last_success = result.last_success if result else job.last_success
+        running = job.execution_lock.locked()
+        status = result.status if result else "UNKNOWN"
+        failure_reason = job.config_error if not job.valid else None
+        if result and failure_reason is None:
+            failures = [f"{task_id}: {task.error or task.status}"
+                        for task_id, task in result.tasks.items()
+                        if task.status in {"ERROR", "WARN", "UNKNOWN"}]
+            if failures:
+                failure_reason = "; ".join(failures)
+            elif status in {"ERROR", "WARN"}:
+                failure_reason = f"one or more tasks reported {status}"
+        return {
+            "id": job.id,
+            "name": job.name,
+            "valid": job.valid,
+            "status": status,
+            "executionStatus": "RUNNING" if running else status,
+            "running": running,
+            "neverExecuted": result is None,
+            "lastRun": result.timestamp if result else None,
+            "lastAttempt": last_attempt,
+            "lastSuccess": last_success,
+            "failureReason": failure_reason,
+            "freshness": freshness_data(job, result),
+        }
+
     def do_GET(self):
         path = urlparse(self.path).path
         jobs = self.server.engine.jobs
         if path == "/health":
             self._json({"status": "ok", "mqttConnected": self.server.adapter.is_connected,
                         "loadedJobs": len(jobs),
-                        "invalidJobs": sum(not job.valid for job in jobs.values())})
+                        "invalidJobs": sum(not job.valid for job in jobs.values()),
+                        "processAlive": True,
+                        "schedulerRunning": self.server.engine.scheduler_running,
+                        "observedAt": utc_now()})
         elif path == "/api/jobs":
-            self._json([{"id": job.id, "name": job.name, "valid": job.valid,
-                         "status": job.last_result.status if job.last_result else "UNKNOWN",
-                         "lastRun": job.last_result.timestamp if job.last_result else None,
-                         "lastSuccess": job.last_result.last_success if job.last_result else None,
-                         "freshness": freshness_data(job, job.last_result)} for job in jobs.values()])
+            self._json([self._job_summary(job) for job in jobs.values()])
         elif path.startswith("/api/jobs/"):
             job = jobs.get(unquote(path.split("/")[3]))
             if job:
-                self._json({"id": job.id, "name": job.name, "valid": job.valid,
+                self._json({**self._job_summary(job),
                             "nextRun": job.next_run_epoch,
-                            "freshness": freshness_data(job, job.last_result),
                             "result": job.last_result.to_dict() if job.last_result else None})
             else:
                 self._json({"error": "job not found"}, 404)

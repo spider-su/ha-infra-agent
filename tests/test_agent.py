@@ -330,7 +330,7 @@ def test_health_and_job_api_expose_safe_operational_diagnostics(tmp_path):
     from datetime import datetime, timezone
     from urllib.request import urlopen
     from home_infra_agent.app import AgentServer
-    from home_infra_agent.core import JobResult
+    from home_infra_agent.core import JobResult, TaskResult
 
     secret = "private-config-value"
     good = Job("good", "Healthy Job", tmp_path, {
@@ -339,34 +339,62 @@ def test_health_and_job_api_expose_safe_operational_diagnostics(tmp_path):
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     stale_success = "2000-01-01T00:00:00+00:00"
     good.last_result = JobResult("good", "OK", now, 12, {"ready": True}, {}, now)
+    good.last_attempt = now
     stale = Job("stale", "Stale Job", tmp_path, {"freshness": {"maxAge": "60s"}}, {})
     stale.last_result = JobResult("stale", "ERROR", now, 8, {}, {}, stale_success)
+    stale.last_attempt = now
+    failed = Job("failed", "Failed Job", tmp_path, {"freshness": {"maxAge": "60s"}}, {})
+    failed.last_result = JobResult("failed", "ERROR", now, 8, {}, {
+        "probe": TaskResult("probe", "ERROR", now, 8, {}, "TimeoutError (details redacted)")
+    })
+    failed.last_attempt = now
+    never = Job("never", "Never Run", tmp_path, {"freshness": {"maxAge": "60s"}}, {})
     bad = Job("bad", "Invalid Job", tmp_path, {}, {}, False, "invalid")
     adapter = type("Adapter", (), {"is_connected": False})()
-    server = AgentServer(("127.0.0.1", 0), JobEngine([good, stale, bad]), adapter)
+    server = AgentServer(("127.0.0.1", 0), JobEngine([good, stale, failed, never, bad]), adapter)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
         with urlopen(base + "/health") as response:
             health = json.load(response)
-        assert health == {"status": "ok", "mqttConnected": False, "loadedJobs": 3, "invalidJobs": 1}
+        assert health["status"] == "ok" and health["processAlive"] is True
+        assert health["mqttConnected"] is False and health["schedulerRunning"] is False
+        assert health["loadedJobs"] == 5 and health["invalidJobs"] == 1
+        observed = datetime.fromisoformat(health["observedAt"])
+        assert observed.tzinfo is not None and observed.utcoffset().total_seconds() == 0
 
         with urlopen(base + "/api/jobs") as response:
             jobs = json.load(response)
         good_summary = next(job for job in jobs if job["id"] == "good")
+        assert {"id", "name", "valid", "status", "lastRun", "lastSuccess", "freshness"} <= good_summary.keys()
         assert good_summary["valid"] is True
         assert good_summary["status"] == "OK"
+        assert good_summary["executionStatus"] == "OK" and good_summary["running"] is False
+        assert good_summary["neverExecuted"] is False
         assert good_summary["lastRun"] == now
+        assert good_summary["lastAttempt"] == now
         assert good_summary["lastSuccess"] == now
+        assert good_summary["failureReason"] is None
         assert good_summary["freshness"]["status"] == "FRESH"
         stale_summary = next(job for job in jobs if job["id"] == "stale")
         assert stale_summary["status"] == "ERROR"
         assert stale_summary["lastSuccess"] == stale_success
         assert stale_summary["freshness"]["status"] == "STALE"
+        assert stale_summary["failureReason"] == "one or more tasks reported ERROR"
+        failed_summary = next(job for job in jobs if job["id"] == "failed")
+        assert failed_summary["status"] == "ERROR"
+        assert failed_summary["failureReason"] == "probe: TimeoutError (details redacted)"
+        never_summary = next(job for job in jobs if job["id"] == "never")
+        assert never_summary["status"] == "UNKNOWN" and never_summary["neverExecuted"] is True
+        assert never_summary["lastAttempt"] is None and never_summary["lastSuccess"] is None
+        assert never_summary["freshness"]["status"] == "UNKNOWN"
+        invalid_summary = next(job for job in jobs if job["id"] == "bad")
+        assert invalid_summary["valid"] is False and invalid_summary["failureReason"] == "invalid"
 
         with urlopen(base + "/api/jobs/good") as response:
             detail = json.load(response)
+        assert detail["executionStatus"] == "OK" and detail["lastAttempt"] == now
         assert detail["freshness"]["status"] == "FRESH"
         with urlopen(base + "/api/jobs/stale") as response:
             stale_detail = json.load(response)
@@ -377,6 +405,97 @@ def test_health_and_job_api_expose_safe_operational_diagnostics(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(2)
+
+
+def test_job_api_reports_running_state_without_triggering_execution(tmp_path):
+    from urllib.request import urlopen
+    from home_infra_agent.app import AgentServer
+
+    job = Job("running", "Running Job", tmp_path, {}, {})
+    assert job.execution_lock.acquire(blocking=False)
+    server = AgentServer(("127.0.0.1", 0), JobEngine([job]), type("Adapter", (), {"is_connected": False})())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(f"http://127.0.0.1:{server.server_port}/api/jobs") as response:
+            summary = json.load(response)[0]
+        assert summary["running"] is True
+        assert summary["executionStatus"] == "RUNNING"
+        assert summary["neverExecuted"] is True
+        assert job.last_result is None
+    finally:
+        job.execution_lock.release()
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
+def test_job_freshness_is_recomputed_for_each_api_request(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from urllib.request import urlopen
+    import home_infra_agent.mqtt as mqtt
+    from home_infra_agent.app import AgentServer
+    from home_infra_agent.core import JobResult
+
+    class Clock:
+        current = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz) if tz else cls.current
+
+        @staticmethod
+        def fromisoformat(value):
+            return datetime.fromisoformat(value)
+
+    monkeypatch.setattr(mqtt, "datetime", Clock)
+    job = Job("clock", "Clock Job", tmp_path, {"freshness": {"maxAge": "60s"}}, {})
+    timestamp = Clock.current.isoformat()
+    job.last_success = timestamp
+    job.last_attempt = timestamp
+    job.last_result = JobResult("clock", "OK", timestamp, 1, {}, {}, timestamp)
+    server = AgentServer(("127.0.0.1", 0), JobEngine([job]), type("Adapter", (), {"is_connected": False})())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/jobs"
+        with urlopen(url) as response:
+            assert json.load(response)[0]["freshness"]["status"] == "FRESH"
+        Clock.current += timedelta(seconds=61)
+        with urlopen(url) as response:
+            updated = json.load(response)[0]
+        assert updated["freshness"]["status"] == "STALE"
+        assert updated["freshness"]["ageSeconds"] == 61
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
+def test_empty_job_configuration_still_reports_live_agent_and_scheduler(tmp_path):
+    from urllib.request import urlopen
+    from home_infra_agent.app import AgentServer
+
+    engine = JobEngine([])
+    engine.start()
+    server = AgentServer(("127.0.0.1", 0), engine, type("Adapter", (), {"is_connected": False})())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(base + "/health") as response:
+            health = json.load(response)
+        with urlopen(base + "/api/jobs") as response:
+            jobs = json.load(response)
+        assert health["status"] == "ok" and health["processAlive"] is True
+        assert health["schedulerRunning"] is True
+        assert health["loadedJobs"] == 0 and health["invalidJobs"] == 0
+        assert jobs == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+        engine.stop()
 
 
 def test_repeated_job_failures_preserve_last_success_and_recover(monkeypatch, tmp_path):

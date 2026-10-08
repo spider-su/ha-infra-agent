@@ -142,6 +142,7 @@ class Job:
     last_result: JobResult | None = None
     last_success: str | None = None
     last_run_epoch: float | None = None
+    last_attempt: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     execution_lock: threading.Lock = field(default_factory=threading.Lock)
     task_errors: dict[str, str] = field(default_factory=dict)
@@ -165,6 +166,8 @@ class Job:
 
     def _run_unlocked(self) -> JobResult:
         started = time.monotonic()
+        with self.lock:
+            self.last_attempt = utc_now()
         results: dict[str, TaskResult] = {}
         if not self.valid:
             status = "ERROR"
@@ -201,9 +204,12 @@ class Job:
             # Keep legacy aliases where unique; ambiguous names are omitted.
             values.update({key: items[0] for key, items in aliases.items() if len(items) == 1})
             if status in {"OK", "WARN"}:
-                self.last_success = utc_now()
+                with self.lock:
+                    self.last_success = utc_now()
+        with self.lock:
+            last_success = self.last_success
         result = JobResult(self.id, status, utc_now(), int((time.monotonic() - started) * 1000),
-                           values, results, self.last_success)
+                           values, results, last_success)
         with self.lock:
             self.last_result = result
             self.last_run_epoch = time.time()
@@ -240,6 +246,13 @@ class JobEngine:
         self.on_result = on_result
         self.stop_event = threading.Event()
         self.threads: list[threading.Thread] = []
+        self.started = False
+
+    @property
+    def scheduler_running(self) -> bool:
+        return (self.started and not self.stop_event.is_set()
+                and len(self.threads) == len(self.jobs)
+                and all(thread.is_alive() for thread in self.threads))
 
     def run_job(self, job_id: str) -> JobResult:
         job = self.jobs[job_id]
@@ -257,6 +270,7 @@ class JobEngine:
             job.execution_lock.release()
 
     def start(self) -> None:
+        self.started = True
         for job in self.jobs.values():
             thread = threading.Thread(target=self._schedule, args=(job,), daemon=True, name=f"job-{job.id}")
             thread.start()
