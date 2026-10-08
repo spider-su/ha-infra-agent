@@ -97,20 +97,27 @@ class Capture:
         self.sequence = 0
         self.condition = threading.Condition()
         self.connected = threading.Event()
+        self.subscribed = threading.Event()
         self.disconnected = threading.Event()
         self.client = paho.Client(paho.CallbackAPIVersion.VERSION2, client_id=client_id)
         self.client.on_connect = self._on_connect
+        self.client.on_subscribe = self._on_subscribe
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         self.client.connect("127.0.0.1", broker.port, 15)
         self.client.loop_start()
         assert self.connected.wait(5), "observer did not connect to Mosquitto"
+        assert self.subscribed.wait(5), "observer did not subscribe to Mosquitto"
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if not getattr(reason_code, "is_failure", False):
             self.disconnected.clear()
+            self.subscribed.clear()
             self.connected.set()
             client.subscribe("#", qos=1)
+
+    def _on_subscribe(self, client, userdata, mid, reason_code_list, properties):
+        self.subscribed.set()
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
         self.connected.clear()
@@ -133,6 +140,15 @@ class Capture:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise AssertionError(f"no matching MQTT message on {topic}; saw {len(self.messages)} messages")
+                self.condition.wait(remaining)
+
+    def wait_for_count(self, predicate, count: int, timeout: float = 8) -> None:
+        deadline = time.monotonic() + timeout
+        with self.condition:
+            while sum(predicate(message) for message in self.messages) < count:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AssertionError(f"timed out waiting for {count} matching MQTT messages")
                 self.condition.wait(remaining)
 
     def close(self):
@@ -214,6 +230,7 @@ def test_connection_discovery_retention_reconnect_and_latest_state(broker):
         broker.start()
         wait_for(lambda: adapter.is_connected, 10, "agent MQTT reconnect")
         assert observer.connected.wait(5), "observer did not reconnect to Mosquitto"
+        assert observer.subscribed.wait(5), "observer did not resubscribe after broker restart"
         latest = observer.wait_for(
             state_topic,
             lambda m: not m.retained and json.loads(m.payload)["values"].get("value") == 3,
@@ -231,6 +248,9 @@ def test_connection_discovery_retention_reconnect_and_latest_state(broker):
             raise AssertionError(f"{exc}; discovery publications: {seen}") from exc
         assert json.loads(republished_discovery.payload)["unique_id"] == f"home_infra_agent_{job_id}_value"
         observer.wait_for("home-infra-agent/availability", lambda m: m.payload == b"online")
+        observer.wait_for_count(
+            lambda m: not m.retained and m.topic != "home-infra-agent/availability", 14
+        )
         live_after_reconnect = [m for m in observer.messages if not m.retained]
         assert len([m for m in live_after_reconnect
                     if m.topic != "home-infra-agent/availability"]) == 14

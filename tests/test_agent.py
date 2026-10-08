@@ -203,6 +203,20 @@ def test_state_freshness_and_failure_clear_known_metrics():
     assert payload["values"]["metric"] is None and payload["values"]["other"] is None
 
 
+def test_fractional_freshness_duration_matches_state_and_home_assistant_expiry():
+    from datetime import datetime, timezone
+    from home_infra_agent.mqtt import freshness_data
+
+    job = Job("fractional", "Fractional", Path("."), {"freshness": {"maxAge": "0.5m"}}, {})
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    result = {"status": "OK", "timestamp": now, "lastSuccess": now, "values": {}}
+    freshness = freshness_data(job, result)
+    configs = [json.loads(payload) for _, payload in discovery_configs(job, type("Result", (), {"values": {}})())]
+
+    assert freshness == {"status": "FRESH", "ageSeconds": 0, "maxAgeSeconds": 30}
+    assert all(config["expire_after"] == 30 for config in configs)
+
+
 def test_discovery_adds_freshness_entities_without_changing_existing_ids():
     job = Job("proxmox", "Proxmox Cluster", Path("."),
               {"freshness": {"maxAge": "180s"}, "mqtt": {"topic": "home/proxmox"}}, {})

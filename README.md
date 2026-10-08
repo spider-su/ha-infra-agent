@@ -14,8 +14,6 @@ flowchart LR
   J --> U[Read-only UI and JSON API]
 ```
 
-For the system context, component boundaries, source ownership, Home Assistant relationship, deployment model, and proposed extensions, see [the architecture and roadmap](docs/architecture-and-roadmap.md).
-
 ## Run locally
 
 Requires Python 3.11+, `ping` from iputils, and (for MQTT) access to a broker.
@@ -58,6 +56,8 @@ targets:
   home-lab-1: 192.168.1.52
   home-lab-2: 192.168.1.53
 ```
+
+Job intervals, timeouts, and freshness limits accept positive seconds (`30`, `30s`), milliseconds (`500ms`), minutes (`5m`), or hours (`2h`). Values below 100 ms are clamped to 100 ms.
 
 Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, duration, optional error, and a values map that supports native JSON booleans, numbers, strings, and timestamps. Job values include task-qualified keys plus short keys only when that field occurs in one task. If two tasks return the same short field name, both qualified keys remain and the ambiguous alias is omitted regardless of task order. Runtime exception details are redacted from result payloads and logs; configuration validation errors remain descriptive.
 
@@ -335,4 +335,8 @@ GitHub Actions runs the test suite on pull requests and pushes to `main`. After 
 
 Run `pytest`. Tests cover provider behavior, extraction and transformations, health rules, configuration validation/isolation, HTTP timeouts and bounds, MQTT discovery compatibility, and the YAML-only example. Runtime results remain in memory, the web UI/API has no authentication, configuration is not hot-reloaded, and no history or alerting service is included. Keep the existing production monitor until changes are reviewed, deployed through the separate GitOps process, and verified in Home Assistant.
 
-Recommended next milestone: add one real household service through the YAML-only path, compare its values and entity behavior with the source system, and observe freshness/reconnect behavior before adding broader integrations.
+### Project status: Stable / Maintenance
+
+The core architecture is frozen. Use YAML for new integrations that fit the existing HTTP provider. Add a specialized provider only when a concrete source requires behavior the generic provider cannot express clearly. Existing MQTT topics, unique IDs, and entity contracts are stable; preserve them for compatibility. Prioritize bug fixes and compatibility over new abstractions. No HIA-owned result database or general workflow engine is planned.
+
+HIA does not replace the separate external Google VM watchdog. Its probes and alert path are managed outside this repository and have not been verified as part of this freeze audit.

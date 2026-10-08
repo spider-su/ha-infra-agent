@@ -192,10 +192,7 @@ def extract_values(payload: Any, extract: Mapping[str, Mapping[str, Any]]) -> di
         value = _convert(value, spec["type"], field)
         value_map = spec.get("map")
         if value_map is not None:
-            try:
-                value = value_map.get(value, value)
-            except TypeError:
-                pass
+            value = value_map.get(value, value)
             value = _convert(value, spec["type"], field)
         if "multiply" in spec:
             value *= spec["multiply"]

@@ -8,6 +8,9 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from .core import parse_duration
+from .errors import ConfigError
+
 log = logging.getLogger(__name__)
 AVAILABILITY_TOPIC = "home-infra-agent/availability"
 _RESERVED_IDS = {"status", "last_run", "duration_ms", "last_success", "freshness"}
@@ -17,12 +20,9 @@ def _job_max_age(job: Any) -> int | None:
     value = job.config.get("freshness", {}).get("maxAge")
     if value is None:
         return None
-    text = str(value).strip().lower()
     try:
-        multiplier = 1 if text.endswith("s") else 60 if text.endswith("m") else 3600 if text.endswith("h") else 1
-        amount = int(text[:-1] if text[-1:] in "smh" else text)
-        return max(1, amount * multiplier)
-    except (ValueError, IndexError):
+        return max(1, int(parse_duration(value)))
+    except ConfigError:
         return None
 
 

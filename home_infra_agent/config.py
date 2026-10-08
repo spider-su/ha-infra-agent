@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 from pathlib import Path
 from typing import Any, Mapping
@@ -64,12 +63,8 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         if not isinstance(headers, Mapping) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in headers.items()):
             raise ConfigError(f"task {task_id}: headers must map strings to strings")
         try:
-            request_timeout = config.get("timeout", "10s")
-            timeout_number = float(str(request_timeout).strip().lower().removesuffix("s").removesuffix("m"))
-            if not math.isfinite(timeout_number) or timeout_number <= 0:
-                raise ValueError
-            parse_duration(request_timeout)
-        except (TypeError, ValueError, ConfigError) as exc:
+            parse_duration(config.get("timeout", "10s"))
+        except ConfigError as exc:
             raise ConfigError(f"task {task_id}: timeout must be a positive duration") from exc
         max_bytes = config.get("maxResponseBytes", 1_048_576)
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 1 <= max_bytes <= 5_242_880:
@@ -139,6 +134,10 @@ def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
             schedule = config.get("schedule", {})
             if not isinstance(schedule, dict):
                 raise ConfigError("job.yaml: schedule must be a mapping")
+            try:
+                parse_duration(config.get("timeout", "10s"))
+            except ConfigError as exc:
+                raise ConfigError("job.yaml: timeout must be a positive duration") from exc
             if "cron" in schedule:
                 if "interval" in schedule:
                     raise ConfigError("job.yaml: schedule cannot combine cron and interval")
@@ -147,20 +146,18 @@ def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
                     raise ConfigError("job.yaml: schedule.timezone must be a string")
                 next_cron_run(str(schedule["cron"]), timezone_name)
             else:
-                parse_duration(schedule.get("interval", "60s"))
+                try:
+                    parse_duration(schedule.get("interval", "60s"))
+                except ConfigError as exc:
+                    raise ConfigError("job.yaml: schedule.interval must be a positive duration") from exc
             freshness = config.get("freshness", {})
             if not isinstance(freshness, dict):
                 raise ConfigError("job.yaml: freshness must be a mapping")
             if "maxAge" in freshness:
-                age_text = str(freshness["maxAge"]).strip().lower()
-                amount_text = age_text[:-1] if age_text.endswith(("s", "m")) else age_text
                 try:
-                    amount = float(amount_text)
                     parse_duration(freshness["maxAge"])
-                except (TypeError, ValueError, ConfigError) as exc:
+                except ConfigError as exc:
                     raise ConfigError("job.yaml: freshness.maxAge must be a positive duration") from exc
-                if not math.isfinite(amount) or amount <= 0:
-                    raise ConfigError("job.yaml: freshness.maxAge must be a positive duration")
             validate_entity_metadata(config.get("mqtt", {}), job_id)
             tasks: dict[str, dict[str, Any]] = {}
             task_errors: dict[str, str] = {}
