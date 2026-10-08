@@ -1,0 +1,39 @@
+name: Example HTTP Service
+schedule:
+  interval: 60s
+timeout: 5s
+freshness:
+  maxAge: 180s
+mqtt:
+  enabled: true
+  topic: home/example-service
+  device:
+    name: Example HTTP Service
+    manufacturer: Custom
+    model: JSON status API
+  entities:
+    online:
+      name: API online
+      icon: mdi:web
+    nodeState:
+      name: Node state
+      component: binary_sensor
+      payload_on: UP
+      payload_off: DOWN
+    ready:
+      name: Ready nodes
+      unit_of_measurement: nodes
+      state_class: measurement
+    temperature:
+      name: Temperature
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+    humidity:
+      name: Humidity
+      unit_of_measurement: "%"
+      device_class: humidity
+      state_class: measurement
+    updatedAt:
+      name: API updated
+      device_class: timestamp

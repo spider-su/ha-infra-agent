@@ -10,6 +10,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 AVAILABILITY_TOPIC = "home-infra-agent/availability"
+_RESERVED_IDS = {"status", "last_run", "duration_ms", "last_success", "freshness"}
 
 
 def _job_max_age(job: Any) -> int | None:
@@ -57,10 +58,10 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
     topic = mqtt.get("topic", f"home/{job.id}").rstrip("/") + "/state"
     device = mqtt.get("device", {})
     identifier = f"home_infra_agent_{job.id}"
-    entities = [("sensor", "status", "Status", "status"), ("sensor", "last_run", "Last run", "timestamp"),
-                ("sensor", "duration_ms", "Duration", "durationMs"),
-                ("sensor", "last_success", "Last success", "lastSuccess"),
-                ("sensor", "freshness", "Result freshness", "freshness.status")]
+    entities = [("sensor", "status", "Status", "status", {}), ("sensor", "last_run", "Last run", "timestamp", {}),
+                ("sensor", "duration_ms", "Duration", "durationMs", {}),
+                ("sensor", "last_success", "Last success", "lastSuccess", {}),
+                ("sensor", "freshness", "Result freshness", "freshness.status", {})]
     values = result.values if result else {}
     metadata = mqtt.get("entities", {})
     metadata_fields = {"name", "unit_of_measurement", "device_class", "state_class", "expire_after", "icon"}
@@ -68,10 +69,20 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
     for key, value in values.items():
         key_str = str(key)
         slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
-        component = "binary_sensor" if value in ("UP", "DOWN") else "sensor"
-        entities.append((component, slug, key_str, key_str))
+        entity_metadata = metadata.get(key_str, {}) if isinstance(metadata, dict) else {}
+        entity_metadata = entity_metadata if isinstance(entity_metadata, dict) else {}
+        component = entity_metadata.get("component", "binary_sensor" if value in ("UP", "DOWN") else "sensor")
+        entities.append((component, slug, key_str, key_str, entity_metadata))
     configs = []
-    for component, key, name, template_path in entities:
+    seen = set()
+    for component, key, name, template_path, entity_metadata in entities:
+        if key in _RESERVED_IDS and template_path not in {"status", "timestamp", "durationMs", "lastSuccess", "freshness.status"}:
+            log.warning("skipping MQTT value that conflicts with built-in entity %s: %s", job.id, key)
+            continue
+        if key in seen:
+            log.warning("skipping duplicate MQTT entity identifier for job %s: %s", job.id, key)
+            continue
+        seen.add(key)
         uid = f"{identifier}_{key}"
         if template_path in {"status", "timestamp", "durationMs", "lastSuccess"}:
             template = "{{ value_json." + template_path + " }}"
@@ -79,32 +90,22 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
             template = "{{ value_json.freshness.status }}"
         else:
             template = "{{ value_json[\"values\"][\"" + template_path + "\"] }}"
-        config = {"name": name, "unique_id": uid, "state_topic": topic,
+        config = {"name": entity_metadata.get("name", name), "unique_id": uid, "state_topic": topic,
                   "value_template": template,
                   "availability_topic": AVAILABILITY_TOPIC,
                   "device": {"identifiers": [identifier], "name": device.get("name", job.name),
                              "manufacturer": device.get("manufacturer", "Custom"),
                              "model": device.get("model", job.name)}}
         if component == "binary_sensor":
-            config.update(payload_on="UP", payload_off="DOWN")
+            config.update(payload_on=entity_metadata.get("payload_on", "UP"),
+                          payload_off=entity_metadata.get("payload_off", "DOWN"))
         if key == "duration_ms":
             config["unit_of_measurement"] = "ms"
-        entity_metadata = metadata.get(key, {}) if isinstance(metadata, dict) else {}
-        if isinstance(entity_metadata, dict):
-            config.update({field: value for field, value in entity_metadata.items()
-                           if field in metadata_fields and value is not None})
-        if key == "snapshotDate":
-            config["device_class"] = "date"
-        if key in {"totalDeposits", "totalWithdrawals", "netDeposits", "totalCash",
-                   "totalMarketValue", "totalEquity", "totalRealizedProfit",
-                   "totalUnrealizedProfit", "totalDividends", "totalInterest",
-                   "totalFees", "totalTaxes", "convertedCashSubtotal",
-                   "convertedEquitySubtotal", "equity", "totalProfit"}:
-            currency = values.get("baseCurrency")
-            if currency:
-                config.update(device_class="monetary", state_class="measurement", unit_of_measurement=currency)
-        elif key == "roiPct":
-            config.update(state_class="measurement", unit_of_measurement="%")
+        config.update({field: value for field, value in entity_metadata.items()
+                       if field in metadata_fields and value is not None})
+        unit_field = entity_metadata.get("unit_of_measurement_field")
+        if unit_field and values.get(unit_field) is not None:
+            config["unit_of_measurement"] = str(values[unit_field])
         if max_age:
             config.setdefault("expire_after", max_age)
         configs.append((f"{prefix}/{component}/{uid}/config", json.dumps(config, separators=(",", ":"))))

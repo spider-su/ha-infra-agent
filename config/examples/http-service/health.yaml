@@ -1,0 +1,52 @@
+type: http
+url: https://service.internal/api/status
+method: GET
+timeout: 5s
+headers:
+  Accept: application/json
+auth:
+  type: bearer
+  tokenEnv: EXAMPLE_SERVICE_API_TOKEN
+expectedStatusCodes: [200]
+maxResponseBytes: 1048576
+extract:
+  online:
+    path: $.status.online
+    type: boolean
+    required: true
+  ready:
+    path: $.cluster.ready
+    type: integer
+    required: true
+  total:
+    path: $.cluster.total
+    type: integer
+    required: true
+  nodeState:
+    path: $.node.state
+    type: string
+    map:
+      ready: UP
+      offline: DOWN
+  temperature:
+    path: $.sensor.temperature_centi
+    type: number
+    multiply: 0.01
+    round: 1
+  humidity:
+    path: $.sensor.humidity
+    type: number
+    default: null
+  updatedAt:
+    path: $.meta.updatedAt
+    type: timestamp
+    required: true
+health:
+  rules:
+    - field: online
+      equals: true
+    - field: ready
+      equalsField: total
+    - field: nodeState
+      equals: UP
+  onFailure: WARN
