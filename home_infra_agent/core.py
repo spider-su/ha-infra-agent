@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import concurrent.futures
+import base64
 import json
 import logging
 import math
 import os
+import re
+import socket
 import ssl
 import subprocess
 import threading
@@ -17,9 +20,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import urlencode
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
+
+from .mapping import (MappingError, evaluate_health, extract_values, validate_discovery_identifiers,
+                      validate_entity_metadata, validate_extractions, validate_health)
 
 log = logging.getLogger(__name__)
 
@@ -114,19 +121,66 @@ class PingProvider(TaskProvider):
 class HttpProvider(TaskProvider):
     def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
         url = config.get("url")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        parts = urlsplit(url) if isinstance(url, str) else None
+        if not parts or parts.scheme not in {"http", "https"} or not parts.hostname:
             raise ConfigError(f"task {task_id}: url must be an HTTP(S) URL")
         method = str(config.get("method", "GET")).upper()
-        request = urllib.request.Request(url, method=method, headers=config.get("headers") or {})
+        request_timeout = parse_duration(config.get("timeout", timeout))
+        max_bytes = int(config.get("maxResponseBytes", 1_048_576))
+        headers = dict(config.get("headers") or {})
+        auth = config.get("auth")
+        if auth:
+            auth_type = auth["type"]
+            if auth_type == "bearer":
+                token = os.environ.get(auth["tokenEnv"])
+                if not token:
+                    raise ConfigError(f"task {task_id}: environment variable {auth['tokenEnv']} is not set")
+                headers["Authorization"] = f"Bearer {token}"
+            elif auth_type == "basic":
+                username = os.environ.get(auth["usernameEnv"])
+                password = os.environ.get(auth["passwordEnv"])
+                if not username or password is None:
+                    missing = auth["usernameEnv"] if not username else auth["passwordEnv"]
+                    raise ConfigError(f"task {task_id}: environment variable {missing} is not set")
+                encoded = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
+                headers["Authorization"] = f"Basic {encoded}"
+        data = None
+        if method == "POST" and "body" in config:
+            data = json.dumps(config["body"], separators=(",", ":")).encode("utf-8")
+            headers.setdefault("Content-Type", "application/json")
+        request = urllib.request.Request(url, data=data, method=method, headers=headers)
         status_code = 0
+        body = b""
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                status_code = response.status
-                response.read(1)
+            response = urllib.request.urlopen(request, timeout=request_timeout)
         except urllib.error.HTTPError as exc:
-            status_code = exc.code
-        values = {"reachable": 200 <= status_code < 400, "statusCode": status_code}
-        return ("OK" if values["reachable"] else "ERROR"), values
+            response = exc
+        except (TimeoutError, socket.timeout):
+            raise ConfigError(f"task {task_id}: HTTP request timed out") from None
+        except urllib.error.URLError:
+            raise ConfigError(f"task {task_id}: HTTP connection failed") from None
+        try:
+            with response:
+                status_code = response.status
+                if config.get("extract"):
+                    body = response.read(max_bytes + 1)
+        except TimeoutError:
+            raise ConfigError(f"task {task_id}: HTTP response read timed out") from None
+        except OSError:
+            raise ConfigError(f"task {task_id}: HTTP response read failed") from None
+        if len(body) > max_bytes:
+            raise ConfigError(f"task {task_id}: response exceeds maxResponseBytes ({max_bytes})")
+        expected = config.get("expectedStatusCodes", list(range(200, 400)))
+        values = {"reachable": status_code in expected, "statusCode": status_code}
+        if not values["reachable"]:
+            return "ERROR", values
+        if not config.get("extract"):
+            return "OK", values
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ConfigError(f"task {task_id}: response is not valid JSON") from None
+        return "OK", payload
 
 
 class KubernetesProvider(TaskProvider):
@@ -335,8 +389,69 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         raise ConfigError(f"task {task_id}: unsupported type {kind!r}")
     if kind == "ping" and (not isinstance(config.get("targets"), dict) or not config["targets"]):
         raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
-    if kind == "http" and not str(config.get("url", "")).startswith(("http://", "https://")):
-        raise ConfigError(f"task {task_id}: url must be an HTTP(S) URL")
+    if kind == "http":
+        allowed_http = {"type", "url", "method", "headers", "auth", "timeout", "body",
+                        "expectedStatusCodes", "maxResponseBytes", "extract", "health"}
+        unknown = set(config) - allowed_http
+        if unknown:
+            raise ConfigError(f"task {task_id}: unsupported HTTP option {sorted(unknown)[0]}")
+        parts = urlsplit(config.get("url", "")) if isinstance(config.get("url"), str) else None
+        if not parts or parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ConfigError(f"task {task_id}: url must be an absolute HTTP(S) URL")
+        try:
+            _ = parts.port
+        except ValueError as exc:
+            raise ConfigError(f"task {task_id}: url has an invalid port") from exc
+        if parts.username is not None or parts.password is not None:
+            raise ConfigError(f"task {task_id}: credentials must use auth environment references, not URL userinfo")
+        if str(config.get("method", "GET")).upper() not in {"GET", "POST"}:
+            raise ConfigError(f"task {task_id}: method must be GET or POST")
+        if "body" in config and str(config.get("method", "GET")).upper() != "POST":
+            raise ConfigError(f"task {task_id}: body is only supported with POST")
+        if "body" in config:
+            try:
+                json.dumps(config["body"])
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(f"task {task_id}: body must contain JSON values") from exc
+        headers = config.get("headers", {})
+        if not isinstance(headers, Mapping) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in headers.items()):
+            raise ConfigError(f"task {task_id}: headers must map strings to strings")
+        try:
+            request_timeout = config.get("timeout", "10s")
+            timeout_number = float(str(request_timeout).strip().lower().removesuffix("s").removesuffix("m"))
+            if not math.isfinite(timeout_number) or timeout_number <= 0:
+                raise ValueError
+            parse_duration(request_timeout)
+        except (TypeError, ValueError, ConfigError) as exc:
+            raise ConfigError(f"task {task_id}: timeout must be a positive duration") from exc
+        max_bytes = config.get("maxResponseBytes", 1_048_576)
+        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 1 <= max_bytes <= 5_242_880:
+            raise ConfigError(f"task {task_id}: maxResponseBytes must be an integer from 1 to 5242880")
+        expected = config.get("expectedStatusCodes", list(range(200, 400)))
+        if not isinstance(expected, list) or not expected or any(isinstance(code, bool) or not isinstance(code, int) or not 100 <= code <= 599 for code in expected):
+            raise ConfigError(f"task {task_id}: expectedStatusCodes must be a non-empty list of HTTP status codes")
+        auth = config.get("auth")
+        if auth is not None:
+            if not isinstance(auth, Mapping):
+                raise ConfigError(f"task {task_id}: auth must be a mapping")
+            auth_type = auth.get("type")
+            required_auth = {"type", "tokenEnv"} if auth_type == "bearer" else {"type", "usernameEnv", "passwordEnv"} if auth_type == "basic" else set()
+            if not required_auth or set(auth) != required_auth:
+                raise ConfigError(f"task {task_id}: auth must define bearer tokenEnv or basic usernameEnv/passwordEnv")
+            if any(not isinstance(auth[field], str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", auth[field]) for field in required_auth - {"type"}):
+                raise ConfigError(f"task {task_id}: auth environment references must be valid variable names")
+        if "extract" in config:
+            try:
+                validate_extractions(config["extract"], task_id)
+            except MappingError as exc:
+                raise ConfigError(str(exc)) from None
+    if "health" in config:
+        try:
+            validate_health(config["health"], task_id)
+        except MappingError as exc:
+            raise ConfigError(str(exc)) from None
+    if "extract" in config and kind != "http":
+        raise ConfigError(f"task {task_id}: extract is currently supported for HTTP Tasks")
     if kind == "solarman":
         for field_name in ("appIdEnv", "appSecretEnv", "emailEnv", "passwordEnv"):
             if not isinstance(config.get(field_name), str) or not config[field_name].strip():
@@ -443,6 +558,7 @@ class Job:
     last_run_epoch: float | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     execution_lock: threading.Lock = field(default_factory=threading.Lock)
+    task_errors: dict[str, str] = field(default_factory=dict)
 
     @property
     def interval(self) -> float:
@@ -472,13 +588,18 @@ class Job:
                 task_start = time.monotonic()
                 timestamp = utc_now()
                 try:
+                    if task_id in self.task_errors:
+                        raise ConfigError(self.task_errors[task_id])
                     validate_task(task_id, config)
                     provider = PROVIDERS[config["type"]]
                     status, task_values = provider.execute(task_id, config, self.timeout)
+                    if config.get("type") == "http" and "extract" in config and status not in {"ERROR", "UNKNOWN"}:
+                        task_values = extract_values(task_values, config["extract"])
+                    status = evaluate_health(status, task_values, config.get("health"))
                     results[task_id] = TaskResult(task_id, status, timestamp,
                         int((time.monotonic() - task_start) * 1000), task_values)
                 except Exception as exc:  # each task is an independent failure domain
-                    safe_error = str(exc) if isinstance(exc, ConfigError) else f"{type(exc).__name__} (details redacted)"
+                    safe_error = str(exc) if isinstance(exc, (ConfigError, MappingError)) else f"{type(exc).__name__} (details redacted)"
                     log.warning("job %s task %s failed: %s", self.id, task_id, safe_error)
                     results[task_id] = TaskResult(task_id, "ERROR", timestamp,
                         int((time.monotonic() - task_start) * 1000), {}, safe_error)
@@ -562,12 +683,25 @@ def discover_jobs(jobs_dir: Path) -> tuple[list[Job], list[str]]:
                     raise ConfigError("job.yaml: freshness.maxAge must be a positive duration") from exc
                 if not math.isfinite(amount) or amount <= 0:
                     raise ConfigError("job.yaml: freshness.maxAge must be a positive duration")
+            validate_entity_metadata(config.get("mqtt", {}), job_id)
             tasks: dict[str, dict[str, Any]] = {}
+            task_errors: dict[str, str] = {}
             for task_file in sorted(directory.glob("*.yaml")):
                 if task_file.name == "job.yaml":
                     continue
-                tasks[task_file.stem] = _load_yaml(task_file)
-            jobs.append(Job(job_id, name, directory, config, tasks))
+                task_id = task_file.stem
+                try:
+                    task_config = _load_yaml(task_file)
+                    validate_task(task_id, task_config)
+                    tasks[task_id] = task_config
+                except Exception as exc:
+                    message = str(exc) if isinstance(exc, (ConfigError, MappingError)) else "invalid task configuration"
+                    task_errors[task_id] = message
+                    tasks[task_id] = {}
+                    errors.append(f"{job_id}/{task_id}: {message}")
+                    log.error("invalid task configuration %s/%s: %s", job_id, task_id, message)
+            validate_discovery_identifiers(tasks, config.get("mqtt", {}), job_id)
+            jobs.append(Job(job_id, name, directory, config, tasks, task_errors=task_errors))
         except Exception as exc:
             message = f"{job_id}: {exc}"
             log.error("invalid job configuration %s", message)

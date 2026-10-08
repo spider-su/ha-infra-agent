@@ -212,7 +212,9 @@ def test_existing_investory_and_proxmox_discovery_contracts_remain():
         return next(json.loads(body) for topic, body in discovery_configs(job, result)
                     if topic.endswith(suffix))
 
-    investment = config_for("investory", {"topic": "home/investory"},
+    root = Path(__file__).parents[1]
+    investment_config = yaml.safe_load((root / "config/jobs/investory/job.yaml").read_text())["mqtt"]
+    investment = config_for("investory", investment_config,
                             {"equity": 1000, "baseCurrency": "PLN"},
                             "home_infra_agent_investory_equity/config")
     assert investment["device_class"] == "monetary" and investment["unit_of_measurement"] == "PLN"

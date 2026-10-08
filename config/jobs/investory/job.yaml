@@ -12,3 +12,14 @@ mqtt:
     name: Investory Portfolio
     manufacturer: Investory
     model: Portfolio Summary
+  entities:
+    snapshotDate:
+      device_class: date
+    equity:
+      device_class: monetary
+      state_class: measurement
+      unit_of_measurement_field: baseCurrency
+    totalProfit:
+      device_class: monetary
+      state_class: measurement
+      unit_of_measurement_field: baseCurrency

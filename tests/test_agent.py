@@ -308,3 +308,18 @@ def test_mqtt_publish_deduplicates_discovery_and_clean_shutdown_is_offline():
     availability = [message[1] for message in client.messages if message[0] == "home-infra-agent/availability"]
     assert "online" in availability and all(message[3] for message in client.messages)
     assert availability[-1] == "offline"
+
+
+def test_explicit_mqtt_entity_metadata_controls_component_and_payloads():
+    job = Job("service", "Service", Path("."), {"mqtt": {"entities": {
+        "state": {"name": "Service state", "component": "binary_sensor",
+                  "payload_on": "READY", "payload_off": "DOWN", "icon": "mdi:heart-pulse"}}}}, {})
+    result = type("Result", (), {"values": {"state": "READY"}})()
+    configs = discovery_configs(job, result)
+    topic, payload = next((topic, body) for topic, body in configs if "home_infra_agent_service_state/config" in topic)
+    config = json.loads(payload)
+    assert topic.startswith("homeassistant/binary_sensor/")
+    assert config["unique_id"] == "home_infra_agent_service_state"
+    assert config["name"] == "Service state"
+    assert config["payload_on"] == "READY" and config["payload_off"] == "DOWN"
+    assert config["icon"] == "mdi:heart-pulse"
