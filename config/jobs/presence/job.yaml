@@ -1,0 +1,21 @@
+name: Family Presence
+schedule:
+  interval: 5m
+timeout: 3s
+freshness:
+  maxAge: 15m
+mqtt:
+  enabled: true
+  topic: home/family/presence
+  device:
+    name: Family Presence
+    manufacturer: Custom
+    model: Home Infra Agent
+  entities:
+    alex: {name: Alex, component: binary_sensor, payload_on: HOME, payload_off: AWAY, device_class: presence}
+    maria: {name: Maria, component: binary_sensor, payload_on: HOME, payload_off: AWAY, device_class: presence}
+    olga: {name: Olga, component: binary_sensor, payload_on: HOME, payload_off: AWAY, device_class: presence}
+    family_home: {name: Family home, component: binary_sensor, payload_on: HOME, payload_off: AWAY, device_class: presence}
+    home_count: {name: People home, unit_of_measurement: people, state_class: measurement}
+    total: {name: Known people, unit_of_measurement: people, state_class: measurement}
+    probe_online: {name: Presence probes online, unit_of_measurement: devices, state_class: measurement}

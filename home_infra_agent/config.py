@@ -41,6 +41,24 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
             raise ConfigError(f"task {task_id}: target names must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
         if {"online", "total"} & set(targets):
             raise ConfigError(f"task {task_id}: target names cannot use the built-in online or total fields")
+    if kind == "presence":
+        allowed = {"type", "targets", "awayAfter"}
+        unknown = set(config) - allowed
+        if unknown:
+            raise ConfigError(f"task {task_id}: unsupported Presence option {sorted(unknown)[0]}")
+        targets = config.get("targets")
+        if not isinstance(targets, dict) or not targets:
+            raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
+        if any(not validate_output_field(name) for name in targets):
+            raise ConfigError(f"task {task_id}: target names must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
+        if {"family_home", "home_count", "total", "probe_online"} & set(targets):
+            raise ConfigError(f"task {task_id}: target names cannot use built-in presence fields")
+        try:
+            away_after = int(config.get("awayAfter", 3))
+            if away_after < 1 or away_after > 20:
+                raise ValueError
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"task {task_id}: awayAfter must be an integer from 1 to 20") from exc
     if kind == "speedtest":
         unknown = set(config) - {"type", "serverId"}
         if unknown:

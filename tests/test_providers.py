@@ -4,12 +4,12 @@ from pathlib import Path
 from types import ModuleType
 
 from home_infra_agent.core import Job, JobEngine, TaskProvider
-from home_infra_agent.providers import PROVIDERS, KubernetesProvider, SpeedtestProvider
+from home_infra_agent.providers import PROVIDERS, KubernetesProvider, PresenceProvider, SpeedtestProvider
 from home_infra_agent.providers.investory import InvestoryPostgresProvider
 
 
 def test_static_provider_registry_contains_all_configured_sources():
-    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest"}
+    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest", "presence"}
     assert all(isinstance(provider, TaskProvider) for provider in PROVIDERS.values())
 
 
@@ -118,3 +118,19 @@ def test_speedtest_normalizes_cli_json(monkeypatch):
     assert values == {"ping_ms": 12.5, "download_mbps": 25.0, "upload_mbps": 8.0,
                       "server_name": "Warsaw", "server_country": "Poland", "server_id": "123",
                       "tested_at": "2026-10-09T08:00:00Z"}
+
+
+def test_presence_requires_consecutive_misses_before_away(monkeypatch):
+    provider = PresenceProvider()
+    observations = iter([
+        ("OK", {"alex": "UP", "online": 1, "total": 1}),
+        ("ERROR", {"alex": "DOWN", "online": 0, "total": 1}),
+        ("ERROR", {"alex": "DOWN", "online": 0, "total": 1}),
+    ])
+    monkeypatch.setattr(provider._ping, "execute", lambda *_args: next(observations))
+    config = {"targets": {"alex": "192.0.2.1"}, "awayAfter": 3}
+    assert provider.execute("family", config, 1)[1]["alex"] == "HOME"
+    assert provider.execute("family", config, 1)[1]["alex"] == "HOME"
+    assert provider.execute("family", config, 1)[1]["alex"] == "HOME"
+    observations = iter([("ERROR", {"alex": "DOWN", "online": 0, "total": 1})])
+    assert provider.execute("family", config, 1)[1]["alex"] == "AWAY"

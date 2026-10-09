@@ -2,7 +2,7 @@
 from .http import HttpProvider
 from .investory import InvestoryPostgresProvider
 from .kubernetes import KubernetesProvider
-from .ping import PingProvider
+from .ping import PingProvider, PresenceProvider
 from .solarman import SolarmanProvider
 from .speedtest import SpeedtestProvider
 
@@ -13,7 +13,8 @@ PROVIDERS = {
     "investory_postgres": InvestoryPostgresProvider(),
     "solarman": SolarmanProvider(),
     "speedtest": SpeedtestProvider(),
+    "presence": PresenceProvider(),
 }
 
 __all__ = ["PROVIDERS", "PingProvider", "HttpProvider", "KubernetesProvider",
-           "InvestoryPostgresProvider", "SolarmanProvider", "SpeedtestProvider"]
+           "InvestoryPostgresProvider", "SolarmanProvider", "SpeedtestProvider", "PresenceProvider"]

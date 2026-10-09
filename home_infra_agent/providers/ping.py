@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures
 import math
 import subprocess
+import threading
 import time
 from typing import Any, Mapping
 
@@ -46,3 +47,41 @@ class PingProvider(TaskProvider):
         online = sum(value == "UP" for value in values.values())
         values.update(online=online, total=len(targets))
         return ("OK" if online == len(targets) else "WARN" if online else "ERROR"), values
+
+
+class PresenceProvider(TaskProvider):
+    """Turn repeated ICMP observations into stable person presence states."""
+
+    def __init__(self) -> None:
+        self._ping = PingProvider()
+        self._lock = threading.Lock()
+        self._state: dict[tuple[str, str], tuple[str, int]] = {}
+
+    def execute(self, task_id: str, config: Mapping[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
+        probe_status, probe_values = self._ping.execute(task_id, config, timeout)
+        away_after = int(config.get("awayAfter", 3))
+        values: dict[str, Any] = {}
+        home_count = 0
+        with self._lock:
+            for name in config["targets"]:
+                key = (task_id, str(name))
+                observed = probe_values.get(str(name), "DOWN")
+                previous, misses = self._state.get(key, ("AWAY", 0))
+                if observed == "UP":
+                    state, misses = "HOME", 0
+                else:
+                    misses += 1
+                    state = "AWAY" if misses >= away_after else previous
+                self._state[key] = (state, misses)
+                values[str(name)] = state
+                if state == "HOME":
+                    home_count += 1
+            values.update(
+                family_home="HOME" if home_count else "AWAY",
+                home_count=home_count,
+                total=len(config["targets"]),
+                probe_online=probe_values.get("online", 0),
+            )
+        # A completed probe cycle is valid even when everyone is away;
+        # network health is reported separately by the network job.
+        return "OK" if probe_status in {"OK", "WARN", "ERROR"} else probe_status, values

@@ -1,0 +1,6 @@
+type: presence
+awayAfter: 3
+targets:
+  alex: 192.168.1.40
+  maria: 192.168.1.49
+  olga: 192.168.1.37
