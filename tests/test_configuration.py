@@ -19,6 +19,17 @@ def test_existing_job_yaml_loads_after_configuration_schema_extension():
     assert all(job.valid and not job.task_errors for job in jobs)
 
 
+def test_investory_schedule_avoids_cloud_run_sleep_and_has_weekend_freshness_window():
+    root = Path(__file__).parents[1]
+    jobs, errors = discover_jobs(root / "config/jobs")
+    investory = next(job for job in jobs if job.id == "investory")
+    assert not errors
+    assert investory.config["schedule"] == {
+        "cron": "0 9-21 * * 1-5", "timezone": "Europe/Warsaw"
+    }
+    assert investory.config["freshness"]["maxAge"] == "259200s"
+
+
 def test_http_service_example_is_a_yaml_only_integration(tmp_path):
     source = Path(__file__).parents[1] / "config/examples/http-service"
     destination = tmp_path / "jobs" / "example-service"

@@ -1,6 +1,6 @@
 name: Investory Portfolio
 schedule:
-  cron: "0 9-22 * * 1-5"
+  cron: "0 9-21 * * 1-5"
   timezone: Europe/Warsaw
 timeout: 15s
 freshness:
