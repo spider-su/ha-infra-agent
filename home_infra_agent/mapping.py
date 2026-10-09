@@ -18,6 +18,11 @@ _TRANSFORMS = {"multiply", "divide", "round", "map"}
 _EXTRACT_OPTIONS = {"path", "type", "required", "default", *_TRANSFORMS}
 _HEALTH_OPERATORS = {"equals", "notEquals", "greaterThan", "lessThan",
                      "greaterThanOrEqual", "lessThanOrEqual", "equalsField", "exists"}
+_OUTPUT_FIELD = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*\Z")
+
+
+def validate_output_field(field: Any) -> bool:
+    return isinstance(field, str) and bool(_OUTPUT_FIELD.fullmatch(field))
 
 
 def parse_path(path: str) -> list[str | int]:
@@ -126,8 +131,8 @@ def validate_extractions(extract: Any, task_id: str = "task") -> None:
         raise MappingError(f"task {task_id}: extract must be a non-empty mapping")
     for field, spec in extract.items():
         prefix = f"task {task_id} extract.{field}"
-        if not isinstance(field, str) or not field.strip() or not isinstance(spec, Mapping):
-            raise MappingError(f"{prefix}: expected a named mapping")
+        if not validate_output_field(field) or not isinstance(spec, Mapping):
+            raise MappingError(f"{prefix}: field name must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
         unknown = set(spec) - _EXTRACT_OPTIONS
         if unknown:
             raise MappingError(f"{prefix}: unsupported option {sorted(unknown)[0]}")

@@ -10,9 +10,9 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from .core import Job, next_cron_run, parse_duration
+from .core import Job, _configured_fields, next_cron_run, parse_duration
 from .errors import ConfigError
-from .mapping import MappingError, validate_extractions, validate_health
+from .mapping import MappingError, validate_extractions, validate_health, validate_output_field
 from .providers import PROVIDERS
 
 log = logging.getLogger(__name__)
@@ -33,8 +33,14 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
     kind = config.get("type")
     if kind not in PROVIDERS:
         raise ConfigError(f"task {task_id}: unsupported type {kind!r}")
-    if kind == "ping" and (not isinstance(config.get("targets"), dict) or not config["targets"]):
-        raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
+    if kind == "ping":
+        targets = config.get("targets")
+        if not isinstance(targets, dict) or not targets:
+            raise ConfigError(f"task {task_id}: targets must be a non-empty mapping")
+        if any(not validate_output_field(name) for name in targets):
+            raise ConfigError(f"task {task_id}: target names must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
+        if {"online", "total"} & set(targets):
+            raise ConfigError(f"task {task_id}: target names cannot use the built-in online or total fields")
     if kind == "http":
         allowed_http = {"type", "url", "method", "headers", "auth", "timeout", "body",
                         "expectedStatusCodes", "maxResponseBytes", "extract", "health"}
@@ -197,8 +203,8 @@ def validate_entity_metadata(mqtt: Any, job_id: str) -> None:
     seen: dict[str, str] = {}
     for field, metadata in entities.items():
         prefix = f"job {job_id} mqtt.entities.{field}"
-        if not isinstance(field, str) or not field or not isinstance(metadata, Mapping):
-            raise MappingError(f"{prefix} must be a field-to-metadata mapping")
+        if not validate_output_field(field) or not isinstance(metadata, Mapping):
+            raise MappingError(f"{prefix} field name must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
         unknown = set(metadata) - allowed
         if unknown:
             raise MappingError(f"{prefix}: unsupported option {sorted(unknown)[0]}")
@@ -231,7 +237,7 @@ def validate_discovery_identifiers(task_configs: Mapping[str, Mapping[str, Any]]
     fields_by_task: dict[str, list[str]] = {}
     field_counts: dict[str, int] = {}
     for task_id, config in task_configs.items():
-        fields = list(config.get("extract", {})) if isinstance(config, Mapping) and isinstance(config.get("extract"), Mapping) else []
+        fields = sorted(_configured_fields(config) or ()) if isinstance(config, Mapping) else []
         fields_by_task[task_id] = fields
         for field in fields:
             field_counts[field] = field_counts.get(field, 0) + 1
@@ -242,6 +248,8 @@ def validate_discovery_identifiers(task_configs: Mapping[str, Mapping[str, Any]]
     for name in names:
         if not isinstance(name, str):
             continue
+        if "." not in name and not validate_output_field(name):
+            raise MappingError(f"job {job_id}: output field {name!r} has an invalid MQTT entity name")
         slug = re.sub(r"[^A-Za-z0-9_]", "_", name)
         if slug in _RESERVED_ENTITY_SLUGS:
             raise MappingError(f"job {job_id}: output {name!r} conflicts with a built-in MQTT entity")

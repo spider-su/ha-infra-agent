@@ -1,6 +1,7 @@
 """HTTP UI and application lifecycle."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import signal
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlsplit
 
 import yaml
 from dotenv import load_dotenv
@@ -36,8 +37,14 @@ def load_app_config(path: Path) -> dict:
 
 class AgentServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, engine, adapter):
+    def __init__(self, address, engine, adapter, allowed_hosts=()):
         self.engine, self.adapter = engine, adapter
+        configured_hosts = allowed_hosts or ()
+        if isinstance(configured_hosts, str):
+            configured_hosts = configured_hosts.split(",")
+        self.allowed_hosts = {"localhost", "127.0.0.1", "::1", "ha-infra.home.k3s.com"}
+        self.allowed_hosts.update(str(host).strip().lower().rstrip(".")
+                                  for host in configured_hosts if str(host).strip())
         super().__init__(address, AgentHandler)
 
 
@@ -87,7 +94,32 @@ class AgentHandler(BaseHTTPRequestHandler):
             "freshness": freshness_data(job, result),
         }
 
+    def _host_allowed(self):
+        raw_host = self.headers.get("Host", "")
+        if not raw_host or "@" in raw_host or any(char in raw_host for char in "/\\?#"):
+            return False
+        try:
+            parsed = urlsplit("//" + raw_host)
+            if not parsed.hostname:
+                return False
+            _ = parsed.port
+        except ValueError:
+            return False
+        hostname = parsed.hostname.lower().rstrip(".")
+        if hostname in self.server.allowed_hosts:
+            return True
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            return False
+        tailscale = address in ipaddress.ip_network("100.64.0.0/10")
+        return (address.is_private or address.is_loopback or address.is_link_local or tailscale) \
+            and not (address.is_unspecified or address.is_multicast or address.is_reserved)
+
     def do_GET(self):
+        if not self._host_allowed():
+            self._json({"error": "invalid Host header"}, 400)
+            return
         path = urlparse(self.path).path
         jobs = self.server.engine.jobs
         if path == "/health":
@@ -99,7 +131,7 @@ class AgentHandler(BaseHTTPRequestHandler):
                         "observedAt": utc_now()})
         elif path == "/api/jobs":
             self._json([self._job_summary(job) for job in jobs.values()])
-        elif path.startswith("/api/jobs/"):
+        elif path.startswith("/api/jobs/") and len(path.split("/")) == 4 and path.split("/")[3]:
             job = jobs.get(unquote(path.split("/")[3]))
             if job:
                 self._json({**self._job_summary(job),
@@ -113,12 +145,15 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def do_POST(self):
-        parts = urlparse(self.path).path.strip("/").split("/")
-        if len(parts) == 4 and parts[0:2] == ["api", "jobs"] and parts[3] == "run":
+        if not self._host_allowed():
+            self._json({"error": "invalid Host header"}, 400)
+            return
+        parts = urlparse(self.path).path.split("/")
+        if len(parts) == 5 and parts[1:3] == ["api", "jobs"] and parts[4] == "run" and parts[3]:
             if not self._same_origin():
                 self._json({"error": "same-origin request required"}, 403)
                 return
-            job_id = unquote(parts[2])
+            job_id = unquote(parts[3])
             if job_id not in self.server.engine.jobs:
                 self._json({"error": "job not found"}, 404)
                 return
@@ -131,11 +166,22 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def _same_origin(self):
-        from urllib.parse import urlsplit
         source = self.headers.get("Origin") or self.headers.get("Referer")
         if not source:
             return False
-        return urlsplit(source).netloc.lower() == self.headers.get("Host", "").lower()
+        try:
+            source_parts = urlsplit(source)
+            host_parts = urlsplit("//" + self.headers.get("Host", ""))
+            if (source_parts.scheme not in {"http", "https"} or not source_parts.hostname
+                    or source_parts.username is not None or source_parts.password is not None
+                    or not host_parts.hostname):
+                return False
+            source_port = source_parts.port or (443 if source_parts.scheme == "https" else 80)
+            host_port = host_parts.port or (443 if source_parts.scheme == "https" else 80)
+            return (source_parts.hostname.lower().rstrip(".") == host_parts.hostname.lower().rstrip(".")
+                    and source_port == host_port)
+        except ValueError:
+            return False
 
     def _html(self):
         data = [{"id": job.id, "name": job.name} for job in self.server.engine.jobs.values()]
@@ -166,7 +212,9 @@ def main() -> None:
     engine.start()
     host = os.getenv("HIA_HOST", app_config.get("web", {}).get("host", "127.0.0.1"))
     port = int(os.getenv("HIA_PORT", app_config.get("web", {}).get("port", 8080)))
-    server = AgentServer((host, port), engine, adapter)
+    web_config = app_config.get("web", {})
+    allowed_hosts = os.getenv("HIA_ALLOWED_HOSTS", web_config.get("allowedHosts", ()))
+    server = AgentServer((host, port), engine, adapter, allowed_hosts)
     stopped = threading.Event()
     def stop(*_):
         if not stopped.is_set():
@@ -179,7 +227,8 @@ def main() -> None:
         server.serve_forever(poll_interval=1)
     finally:
         server.server_close()
-        engine.stop()
+        if not engine.stop(timeout=5):
+            log.warning("job workers did not stop before the shutdown deadline")
         adapter.stop()
 
 

@@ -63,7 +63,26 @@ def state_payload(job_id: str, result: Any, max_age: int | None = None,
     return json.dumps(data, separators=(",", ":"), default=str)
 
 
-def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> list[tuple[str, str]]:
+def _default_component(job: Any, key: str, value: Any) -> str:
+    if value in ("UP", "DOWN"):
+        return "binary_sensor"
+    task_id, separator, field = key.partition(".")
+    if not separator:
+        field = key
+    tasks = job.task_configs.items()
+    if separator and task_id in job.task_configs:
+        tasks = ((task_id, job.task_configs[task_id]),)
+    for _task_id, task_config in tasks:
+        kind = task_config.get("type")
+        if kind == "ping" and field in task_config.get("targets", {}):
+            return "binary_sensor"
+        if kind == "kubernetes" and field.startswith("node_"):
+            return "binary_sensor"
+    return "sensor"
+
+
+def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant",
+                     known_keys: set[str] | None = None) -> list[tuple[str, str]]:
     mqtt = job.config.get("mqtt", {}) if job.valid else {}
     topic = mqtt.get("topic", f"home/{job.id}").rstrip("/") + "/state"
     device = mqtt.get("device", {})
@@ -72,7 +91,10 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
                 ("sensor", "duration_ms", "Duration", "durationMs", {}),
                 ("sensor", "last_success", "Last success", "lastSuccess", {}),
                 ("sensor", "freshness", "Result freshness", "freshness.status", {})]
-    values = result.values if result else {}
+    values = dict(result.values) if result else {}
+    if known_keys:
+        for key in known_keys:
+            values.setdefault(key, None)
     metadata = mqtt.get("entities", {})
     metadata_fields = {"name", "unit_of_measurement", "device_class", "state_class", "expire_after", "icon"}
     max_age = _job_max_age(job)
@@ -81,7 +103,7 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant") -> l
         slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
         entity_metadata = metadata.get(key_str, {}) if isinstance(metadata, dict) else {}
         entity_metadata = entity_metadata if isinstance(entity_metadata, dict) else {}
-        component = entity_metadata.get("component", "binary_sensor" if value in ("UP", "DOWN") else "sensor")
+        component = entity_metadata.get("component", _default_component(job, key_str, value))
         entities.append((component, slug, key_str, key_str, entity_metadata))
     configs = []
     seen = set()
@@ -178,6 +200,8 @@ class MqttAdapter:
 
     def publish(self, job: Any, result: Any) -> None:
         with self._condition:
+            if self._stopping:
+                return
             self._jobs[job.id] = (job, result)
             values = getattr(result, "values", {}) or {}
             self._known_keys.setdefault(job.id, set()).update(str(key) for key in values)
@@ -208,7 +232,11 @@ class MqttAdapter:
         if cfg.get("enabled", True) is False:
             return
         prefix = self.config.get("discoveryPrefix", "homeassistant")
-        for topic, payload in discovery_configs(job, result, prefix):
+        result_status = getattr(result, "status", None)
+        for topic, payload in discovery_configs(job, result, prefix,
+                                                self._known_keys.get(job.id)):
+            if result_status == "ERROR" and topic in self._published_discovery:
+                payload = self._published_discovery[topic]
             if force_discovery or self._published_discovery.get(topic) != payload:
                 client.publish(topic, payload, qos=1, retain=True)
                 self._published_discovery[topic] = payload
@@ -232,6 +260,12 @@ class MqttAdapter:
         self.connected.clear()
         if self._worker:
             self._worker.join(timeout=2)
+            if self._worker.is_alive():
+                log.warning("MQTT publisher worker did not stop before the shutdown deadline")
         if client:
-            client.loop_stop()
             client.disconnect()
+            loop_stopper = threading.Thread(target=client.loop_stop, name="mqtt-loop-stop", daemon=True)
+            loop_stopper.start()
+            loop_stopper.join(timeout=2)
+            if loop_stopper.is_alive():
+                log.warning("MQTT network loop did not stop before the shutdown deadline")

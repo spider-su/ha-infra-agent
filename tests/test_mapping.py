@@ -116,9 +116,11 @@ def test_entity_metadata_validation_and_duplicate_identifiers():
     validate_entity_metadata({"entities": {"online": {"component": "binary_sensor", "payload_on": "UP",
                                                         "payload_off": "DOWN", "expire_after": 30}}}, "sample")
     with pytest.raises(MappingError, match="duplicates entity identifier"):
-        validate_entity_metadata({"entities": {"node.a": {}, "node-a": {}}}, "sample")
+        validate_entity_metadata({"entities": {"node_a": {}, "node-a": {}}}, "sample")
     with pytest.raises(MappingError, match="built-in entity"):
         validate_entity_metadata({"entities": {"status": {}}}, "sample")
+    with pytest.raises(MappingError, match="field name"):
+        validate_entity_metadata({"entities": {"node.name": {}}}, "sample")
     with pytest.raises(MappingError, match="unsupported option"):
         validate_entity_metadata({"entities": {"x": {"state_topic": "other/topic"}}}, "sample")
 
@@ -131,3 +133,11 @@ def test_known_extraction_identifiers_cannot_collide():
         }, {}, "sample")
     with pytest.raises(MappingError, match="built-in MQTT entity"):
         validate_discovery_identifiers({"http": {"extract": {"status": {}}}}, {}, "sample")
+
+
+@pytest.mark.parametrize("field", ["bad.name", "with space", 'quote"name', ""])
+def test_extraction_output_field_names_match_supported_entity_names(field):
+    from home_infra_agent.mapping import validate_extractions
+
+    with pytest.raises(MappingError, match="field name"):
+        validate_extractions({field: {"path": "$.value", "type": "string"}})

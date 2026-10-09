@@ -16,10 +16,28 @@ def test_cron_skips_nonexistent_spring_dst_minute_and_handles_repeated_fall_minu
     assert fall.fold == 1
 
 
+def test_cron_fields_are_parsed_once_and_next_run_is_strictly_after_cursor(monkeypatch):
+    import home_infra_agent.core as core
+
+    calls = 0
+    original = core._cron_field
+    def counted(*args):
+        nonlocal calls
+        calls += 1
+        return original(*args)
+
+    monkeypatch.setattr(core, "_cron_field", counted)
+    after = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+    result = next_cron_run("0 0 1 1 *", "UTC", after)
+    assert result.isoformat() == "2027-01-01T00:00:00+00:00"
+    assert calls == 5
+
+
 def test_shutdown_waits_for_running_job_and_manual_run_is_rejected(monkeypatch):
     import home_infra_agent.core as core
 
     started, release, stopped = threading.Event(), threading.Event(), threading.Event()
+    stop_results = []
 
     class Slow(TaskProvider):
         def execute(self, task_id, config, timeout):
@@ -43,13 +61,14 @@ def test_shutdown_waits_for_running_job_and_manual_run_is_rejected(monkeypatch):
         else:
             raise AssertionError("manual execution should be rejected while scheduled execution is active")
 
-        stopper = threading.Thread(target=lambda: (engine.stop(), stopped.set()), daemon=True)
+        stopper = threading.Thread(target=lambda: (stop_results.append(engine.stop(timeout=.1)), stopped.set()), daemon=True)
         stopper.start()
-        time.sleep(2.1)
-        assert not stopped.is_set(), "shutdown returned while a provider was still running"
+        assert stopped.wait(.5), "shutdown did not respect its configured deadline"
+        assert stop_results == [False], "shutdown must report an active worker"
     finally:
         release.set()
 
-    assert stopped.wait(2), "shutdown did not finish after the active provider returned"
+    assert engine.stop(timeout=2), "shutdown did not finish after the active provider returned"
+    stopper.join(1)
     assert all(not thread.is_alive() for thread in engine.threads)
     assert published == [("slow", "OK")], "rejected manual run must not publish a duplicate result"
