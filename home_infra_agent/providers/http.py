@@ -240,6 +240,7 @@ class HttpProvider(TaskProvider):
                             break
                         chunks.extend(chunk)
                     body = bytes(chunks)
+            deadline.remaining()
         except (TimeoutError, socket.timeout, OSError):
             if deadline.expired.is_set() or time.monotonic() >= deadline.expires_at:
                 raise ConfigError(f"task {task_id}: HTTP request timed out") from None
