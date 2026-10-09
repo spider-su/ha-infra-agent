@@ -244,6 +244,13 @@ def test_ping_uses_one_overall_deadline_across_target_batches(monkeypatch):
     assert calls and all(0 < timeout <= .15 for timeout in calls)
 
 
+def test_ping_provider_annotations_resolve():
+    from typing import Any, Mapping, get_type_hints
+    from home_infra_agent.providers.ping import PingProvider
+
+    assert get_type_hints(PingProvider.execute)["config"] == Mapping[str, Any]
+
+
 def test_state_freshness_and_failure_clear_known_metrics():
     old = "2000-01-01T00:00:00+00:00"
     payload = json.loads(state_payload("j", {"status": "ERROR", "timestamp": old,

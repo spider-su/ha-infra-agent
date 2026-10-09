@@ -5,7 +5,7 @@ import concurrent.futures
 import math
 import subprocess
 import time
-from typing import Any
+from typing import Any, Mapping
 
 from .base import TaskProvider
 
@@ -39,8 +39,8 @@ class PingProvider(TaskProvider):
                         name, status = future.result()
                         values[name] = status
                 except concurrent.futures.TimeoutError:
-                    for future in futures:
-                        future.cancel()
+                    # Running subprocesses enforce the same remaining deadline themselves.
+                    pass
         for name, _host in items:
             values.setdefault(str(name), "DOWN")
         online = sum(value == "UP" for value in values.values())

@@ -2,6 +2,8 @@
 
 A small, configuration-driven collector for operational state that is useful in Home Assistant. Jobs are independent filesystem units; tasks are generic operations; results remain normalized data until the MQTT adapter publishes them.
 
+For the end-to-end integration workflow, deployment checks, troubleshooting, and maintenance policy, see [docs/ONBOARDING.md](docs/ONBOARDING.md).
+
 ```mermaid
 flowchart LR
   C[config/jobs/*] --> E[Job engine]
@@ -333,7 +335,17 @@ GitHub Actions runs the test suite on pull requests and pushes to `main`. After 
 
 ## Tests and current limits
 
-Run `pytest`. Tests cover provider behavior, extraction and transformations, health rules, configuration validation/isolation, HTTP timeouts and bounds, MQTT discovery compatibility, and the YAML-only example. Runtime results remain in memory, the web UI/API has no authentication, configuration is not hot-reloaded, and no history or alerting service is included. Keep the existing production monitor until changes are reviewed, deployed through the separate GitOps process, and verified in Home Assistant.
+Run the suite and focused compatibility checks with:
+
+```sh
+python -m pip install -e '.[test]'
+python -m pytest -q
+python -m pytest -q tests/test_agent.py::test_all_configured_job_discovery_matches_pre_change_golden_contract
+HIA_REQUIRE_MQTT_DOCKER=1 python -m pytest -q tests/test_mqtt_broker.py
+python -c 'from pathlib import Path; from home_infra_agent.config import discover_jobs; jobs, errors = discover_jobs(Path("config/jobs")); print(f"{len(jobs)} jobs, {len(errors)} errors"); raise SystemExit(bool(errors))'
+```
+
+The broker integration test requires Docker and runs an isolated Mosquitto broker. Tests cover provider behavior, extraction and transformations, health rules, configuration validation/isolation, HTTP timeouts and bounds, MQTT discovery compatibility, and the YAML-only example. Runtime results remain in memory, the web UI/API has no authentication, configuration is not hot-reloaded, and no history or alerting service is included. Keep the existing production monitor until changes are reviewed, deployed through the separate GitOps process, and verified in Home Assistant.
 
 ### Project status: Stable / Maintenance
 
