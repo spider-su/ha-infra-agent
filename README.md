@@ -72,6 +72,8 @@ Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, d
 | `kubernetes` | In-cluster nodes, pods, and workload resources | Rules can inspect existing aggregate values |
 | `investory_postgres` | Existing read-only Investory portfolio summary query | Rules can inspect existing normalized values |
 | `solarman` | Existing authenticated Solarman Cloud API provider | Authentication, device selection, retry, field allowlist, and source freshness stay provider-owned; rules may inspect its normalized values |
+| `speedtest` | Ookla Speedtest provider | Existing server selection and normalized measurement values |
+| `presence` | Configured host reachability aggregation | Existing family presence fields and away hysteresis |
 
 The provider registry is deliberately static. Add Python provider code only when a source needs protocol-specific authentication, pagination, stateful selection, parsing, or recovery that is clearer inside a specialized provider than in the generic HTTP configuration. A provider returns primitive values; the existing result model, MQTT adapter, and UI handle the rest.
 
@@ -82,7 +84,7 @@ The provider registry is deliberately static. Add Python provider code only when
 | `core.py` | Result models, per-Job execution locks, task isolation, aggregation, scheduler threads, and manual runs |
 | `config.py` | YAML loading, Job discovery, schedule/Task/MQTT validation, and per-Task validation errors |
 | `mapping.py` | Restricted JSON paths, scalar conversion, transforms, and health-rule evaluation |
-| `providers/` | Five statically registered source providers and their external I/O |
+| `providers/` | Seven statically registered source providers and their external I/O |
 | `mqtt.py` | Discovery, state, availability, freshness, and serialized broker publishing |
 | `app.py` | Process lifecycle, HTTP API, and UI |
 
@@ -351,7 +353,7 @@ The broker integration test requires Docker and runs an isolated Mosquitto broke
 
 The core architecture is frozen. Use YAML for new integrations that fit the existing HTTP provider. Add a specialized provider only when a concrete source requires behavior the generic provider cannot express clearly. Existing MQTT topics, unique IDs, and entity contracts are stable; preserve them for compatibility. Prioritize bug fixes and compatibility over new abstractions. No HIA-owned result database or general workflow engine is planned.
 
-HIA does not replace the separate external Google VM watchdog. Its probes and alert path are managed outside this repository and have not been verified as part of this freeze audit.
+HIA does not replace the separate external Google VM watchdog. Its probes and alert path are managed outside this repository. The monitor service and its Agent target were checked during this audit, but end-to-end delivery of critical notifications was not verified.
 
 ## Bundled network monitoring jobs
 

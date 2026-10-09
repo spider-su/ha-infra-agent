@@ -17,6 +17,17 @@ from .providers import PROVIDERS
 
 log = logging.getLogger(__name__)
 
+
+def _integer_value(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+        return int(value)
+    raise ValueError
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text())
@@ -54,7 +65,7 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         if {"family_home", "home_count", "total", "probe_online"} & set(targets):
             raise ConfigError(f"task {task_id}: target names cannot use built-in presence fields")
         try:
-            away_after = int(config.get("awayAfter", 3))
+            away_after = _integer_value(config.get("awayAfter", 3))
             if away_after < 1 or away_after > 20:
                 raise ValueError
         except (TypeError, ValueError) as exc:
@@ -65,7 +76,7 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
             raise ConfigError(f"task {task_id}: unsupported Speedtest option {sorted(unknown)[0]}")
         if "serverId" in config:
             try:
-                server_id = int(config["serverId"])
+                server_id = _integer_value(config["serverId"])
                 if server_id <= 0:
                     raise ValueError
             except (TypeError, ValueError) as exc:
@@ -137,7 +148,7 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         if serial_env is not None and (not isinstance(serial_env, str) or not serial_env.strip()):
             raise ConfigError(f"task {task_id}: deviceSerialEnv must name an environment variable")
         try:
-            max_age = int(config.get("maxDataAgeSeconds", 900))
+            max_age = _integer_value(config.get("maxDataAgeSeconds", 900))
             if max_age < 1:
                 raise ValueError
         except (TypeError, ValueError) as exc:
@@ -148,7 +159,7 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
         if not isinstance(config.get("databaseUrlEnv"), str) or not config["databaseUrlEnv"].strip():
             raise ConfigError(f"task {task_id}: databaseUrlEnv is required")
         try:
-            if int(config.get("portfolioId", 1)) != 1:
+            if _integer_value(config.get("portfolioId", 1)) != 1:
                 raise ValueError
         except (TypeError, ValueError) as exc:
             raise ConfigError(f"task {task_id}: this Investory source is scoped to portfolioId 1") from exc

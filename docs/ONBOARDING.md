@@ -4,11 +4,11 @@ This guide covers the operational workflow. The README's Configuration section r
 
 ## Architecture
 
-The Job Engine discovers and validates `jobs/<id>/job.yaml` and sibling task YAML files, schedules Jobs, and isolates task failures. The generic HTTP provider handles ordinary JSON GET/POST APIs. Specialized providers own protocol-specific behavior: ping, Kubernetes API, Investory's read-only PostgreSQL summary, and Solarman authentication/device selection.
+The Job Engine discovers and validates `jobs/<id>/job.yaml` and sibling task YAML files, schedules Jobs, and isolates task failures. The generic HTTP provider handles ordinary JSON GET/POST APIs. Specialized providers own protocol-specific behavior: ping and family presence, Kubernetes API, Investory's read-only PostgreSQL summary, Solarman authentication/device selection, and Speedtest server selection.
 
 Providers return primitive values and status. Results are normalized before health rules and MQTT publication. Freshness is based on the last successful `OK` or `WARN` result and `freshness.maxAge`, independently from the latest result status. Results are held in memory, not history.
 
-The MQTT adapter publishes state and retained Home Assistant Discovery config. Home Assistant owns entity registry, dashboards, and automations. Infra Agent monitors configured Jobs; it is not an independent notification service. The separate Google VM watchdog must independently monitor critical reachability and deliver alerts even when the home network or agent is unavailable. It should consume the agent summary rather than duplicate detailed collection. This PR does not change the watchdog.
+The MQTT adapter publishes state and retained Home Assistant Discovery config. Home Assistant owns entity registry, dashboards, and automations. Infra Agent monitors configured Jobs; it is not an independent notification service. The separate Google VM watchdog must independently monitor critical reachability and deliver alerts even when the home network or agent is unavailable. It should consume the agent summary rather than duplicate detailed collection; watchdog deployment and notification delivery are managed outside this repository.
 
 ## Choose an Integration
 
