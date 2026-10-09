@@ -36,7 +36,7 @@ The requested Agent commit `3e3b24c` has successful test and Docker Publish work
 
 Since that requested baseline, Agent main advanced to commit `8b87111` and GitOps main advanced to `8aee2bb`; the Agent CI and Docker Publish passed. GitOps main specifies the immutable `sha-8b87111` tag, and the live amd64 Pod reports image ID `sha256:0e20d16668d9182771a8a490cfbaf51d8919a1311a8ebb56726b598e61ccf540`, matching the registry tag's OCI index digest. That index selects amd64 manifest `sha256:9b32d88b86aa61c51618ac2fd2a2de8d7091589cdff9bc3b68249db531202b43`, whose config digest is `sha256:ab7bd254762d73cc7a68723dcb86f04850b1e076893fb81747f515462b705071`. The node architecture is amd64. A CRI image ID need not equal the platform manifest or config digest.
 
-Argo reports the Home Infra Agent dev Application Synced/Healthy. The image had already advanced beyond `3e3b24c`; no downgrade or duplicate image-promotion PR was prepared. Existing MQTT IDs/topics and chart resource limits are unchanged.
+Argo reports the Home Infra Agent dev Application Synced/Healthy at current GitOps main `8aee2bb`. The existing auto-sync reconciled the already-merged image update during this audit: the Agent Pod changed from `sha-fa28e0a` to `sha-8b87111`. No PR merge, rollout command, or image edit from this audit caused that rollout. The image had already advanced beyond `3e3b24c`; no downgrade or duplicate image-promotion PR was prepared. Existing MQTT IDs/topics and chart resource limits are unchanged.
 
 ## Prepared Changes and Tests
 
