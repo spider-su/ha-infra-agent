@@ -48,7 +48,7 @@ Argo reports the Home Infra Agent dev Application Synced/Healthy at current GitO
 - Agent full suite: 113 passed, including Mosquitto integration.
 - GitOps Helm lint and full `scripts/validate.ps1`: passed (304 resources; 284 valid, 0 invalid, 0 errors, 20 skipped).
 
-## Required Before Acceptance
+## Required Before Acceptance (At Initial Audit)
 
 1. Human review and merge of Agent and GitOps PRs. GitOps merge can trigger the existing dev Argo auto-sync; no merge was performed.
 2. Approval to apply the local watchdog proposal to the VM, add `INFRA_AGENT_MQTT_REQUIRED=true`, `INFRA_AGENT_MIN_JOBS=4`, and `INFRA_AGENT_HEALTH_MAX_AGE_SECONDS=300` to `monitor.conf`, and restrict existing file modes. Proposed permission commands are:
@@ -64,3 +64,25 @@ Argo reports the Home Infra Agent dev Application Synced/Healthy at current GitO
 4. After the approved VM change, verify semantic health, Job policy, file ownership/modes, and the existing failure/recovery counters without forcing a production notification.
 
 The live Investory 503 during its stated operating window, unverified Cloud Run cause, un-applied VM semantic checks, and open permission findings prevent a READY recommendation.
+
+## Post-Approval Update
+
+**Observed:** 2026-10-09, approximately 12:37 Europe/Warsaw. This addendum records state after PR review/merge and explicit approval for the VM changes. The initial findings above remain an audit-time snapshot; the status below supersedes its open-PR and un-applied-VM statements.
+
+### Merged Changes and Argo Reconciliation
+
+- Agent PR [#13](https://github.com/spider-su/ha-infra-agent/pull/13) merged as `9dfe0d3`; GitOps PR [#22](https://github.com/spider-su/ops-autopilot/pull/22) merged as `a487f1a`. Their CI/repository validation checks passed.
+- After explicit user authorization, the `home-infra-agent-dev` Argo Application was manually synced to GitOps revision `7de4940`. Argo reported Synced/Healthy. The Deployment rolled due to rendered configuration change and retained image `aserobaba/home-infra-agent:sha-8b871113d5bd412c0fc46f22a722736036fcc4ac`; no image promotion or resource-limit change occurred.
+- The live ConfigMap and `/api/jobs` confirmed the Investory schedule `0 9-21 * * 1-5` in `Europe/Warsaw` and `freshness.maxAgeSeconds=259200` (72 hours). At observation, Investory was valid but never executed after the rollout, so its status/freshness remained UNKNOWN pending its next scheduled run. The existing MQTT topics/entity IDs were not changed.
+- Live `/health` returned HTTP 200 with status `ok`, process/scheduler/MQTT true, six loaded Jobs, zero invalid Jobs, and a recent observation. The K3s job emitted WARN while the old Grafana Pod remained Evicted/ContainerStatusUnknown; all nodes were Ready and the replacement Grafana Pod was Running. No aggregate-rule change or direct Pod restart was made.
+
+### Approved VM Watchdog Installation
+
+- After explicit approval, read-only preflight confirmed the VM's `check.sh` and evaluator still matched their audited baseline hashes before replacement. Local validation passed: 22 isolated watchdog tests, shell syntax, and Python compilation.
+- Installed `/opt/proxmox-monitor/check.sh` has SHA-256 `647a463f2ea1b01b0126611dae65304242a2fc5c3b2bb90e2977a8d02358ac06`; installed `/opt/proxmox-monitor/evaluate_jobs.py` has SHA-256 `2b406e841047a72a54647a645302ce6cc95e10e2b790983a55009b704c63a2b5`. Timestamped pre-change backups were retained for both scripts and `monitor.conf` under `/opt/proxmox-monitor/*pre-acceptance-20261009`.
+- Added `INFRA_AGENT_MQTT_REQUIRED=true`, `INFRA_AGENT_MIN_JOBS=4`, and `INFRA_AGENT_HEALTH_MAX_AGE_SECONDS=300`. Both root-owned config files are mode `0600`; `/var/lib/proxmox-monitor` is root-owned `0700`; state files and `notifications.log` are root-owned `0600`. The script applies `umask 077` and enforces restrictive state modes on subsequent runs.
+- The existing two-minute timer remained active. Its natural runs completed with service exit status 0; logs showed the semantic `infra-agent` target UP and `/api/jobs` evaluated successfully. Optional Investory/Speedtest no-result conditions were warnings. Investory's existing alert marker remained present while its failure counter continued advancing; observed logs showed no duplicate alert-sent event. No check was manually invoked and no notification was manually sent.
+
+### Remaining Acceptance Gates
+
+**Recommendation remains NOT READY.** The Cloud Run endpoint's daytime HTTP 503/status DOWN was not re-diagnosed or changed. The active Google account still lacks Cloud Run inspection permission. Verify Investory freshness after its next scheduled execution, investigate why K3s reports WARN for the historical Evicted Grafana Pod, and observe the watchdog through critical-Job failure/recovery behavior without forcing a notification. Cloud Run owner diagnosis and approval for any service change remain outstanding. No live Cloud Run configuration or alert marker was changed.
