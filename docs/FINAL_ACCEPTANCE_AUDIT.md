@@ -8,7 +8,7 @@
 
 ### Investory Cloud Run
 
-The watchdog's configured URL is `https://investory-61359240267.europe-central2.run.app/actuator/health`. At approximately 12:00 Warsaw time (within its configured 09:00-22:00 operating window), requests from both the Google VM and this workstation resolved DNS, completed TLS, and returned HTTP 503 with Spring Actuator JSON `status: DOWN`. This is not a VM-specific transport failure and not an authentication challenge; the application health endpoint responds. The VM config intentionally skips 22:00-09:00 Europe/Warsaw.
+The watchdog's configured URL is `https://investory-61359240267.europe-central2.run.app/actuator/health`. At approximately 12:00 Warsaw time (within its configured 09:00-22:00 operating window), requests from both the Google VM and this workstation resolved DNS, completed TLS, and returned HTTP 503 with Spring Actuator JSON `status: DOWN`. The response had no `WWW-Authenticate` challenge, so this endpoint does not require HTTP authentication for the observed request. This is not a VM-specific transport failure; the application health endpoint responds. The VM config intentionally skips 22:00-09:00 Europe/Warsaw.
 
 The active monitor recorded 91 daytime failures by approximately 10:14 UTC and an empty Investory alert marker is present. Its failure threshold remains 3; recovery remains 2. No thresholds, state, or notifications were changed by this audit. The marker does not prove recipient delivery, which was not independently verified.
 
