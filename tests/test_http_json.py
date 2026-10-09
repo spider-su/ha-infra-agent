@@ -11,7 +11,7 @@ from home_infra_agent.core import ConfigError, HttpProvider, Job, JobEngine, val
 
 
 @contextmanager
-def serve(payload, status=200, content_type="application/json", delay=0):
+def serve(payload, status=200, content_type="application/json", delay=0, drip=0):
     received = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -27,7 +27,13 @@ def serve(payload, status=200, content_type="application/json", delay=0):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             try:
-                self.wfile.write(content)
+                if drip:
+                    for byte in content:
+                        self.wfile.write(bytes([byte]))
+                        self.wfile.flush()
+                        time.sleep(drip)
+                else:
+                    self.wfile.write(content)
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
@@ -203,6 +209,35 @@ def test_http_timeout_is_bounded():
     assert duration < .28
 
 
+def test_http_timeout_is_an_overall_deadline_for_slow_response_body():
+    with serve({"ok": True}, drip=.04) as (url, _):
+        started = time.monotonic()
+        result = run_http({"type": "http", "url": url, "timeout": "150ms",
+                           "extract": {"ok": {"path": "$.ok", "type": "boolean"}}})
+        duration = time.monotonic() - started
+    assert result.status == "ERROR"
+    assert result.tasks["status"].error == "task status: HTTP request timed out"
+    assert duration < .5
+
+
+def test_http_timeout_bounds_dns_resolution(monkeypatch):
+    import socket
+
+    original = socket.getaddrinfo
+    def slow_dns(*args, **kwargs):
+        time.sleep(.4)
+        return original(*args, **kwargs)
+
+    with serve({"ok": True}) as (url, _):
+        monkeypatch.setattr(socket, "getaddrinfo", slow_dns)
+        started = time.monotonic()
+        result = run_http({"type": "http", "url": url, "timeout": "120ms"})
+        duration = time.monotonic() - started
+    assert result.status == "ERROR"
+    assert result.tasks["status"].error == "task status: HTTP request timed out"
+    assert duration < .3
+
+
 def test_http_timeout_validation_accepts_subsecond_duration():
     validate_task("status", {"type": "http", "url": "https://example.invalid", "timeout": "500ms"})
 
@@ -215,6 +250,8 @@ def test_http_timeout_validation_accepts_subsecond_duration():
     {"type": "http", "url": "http://example.invalid", "expectedStatusCodes": []},
     {"type": "http", "url": "http://example.invalid", "auth": {"type": "bearer", "tokenEnv": "bad-name"}},
     {"type": "http", "url": "http://example.invalid", "body": {"x": 1}},
+    {"type": "http", "url": "http://example.invalid",
+     "extract": {"bad.name": {"path": "$.x", "type": "string"}}},
 ])
 def test_http_configuration_validation(config):
     with pytest.raises(ConfigError):

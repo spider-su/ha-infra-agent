@@ -2,6 +2,8 @@
 
 A small, configuration-driven collector for operational state that is useful in Home Assistant. Jobs are independent filesystem units; tasks are generic operations; results remain normalized data until the MQTT adapter publishes them.
 
+For the end-to-end integration workflow, deployment checks, troubleshooting, and maintenance policy, see [docs/ONBOARDING.md](docs/ONBOARDING.md).
+
 ```mermaid
 flowchart LR
   C[config/jobs/*] --> E[Job engine]
@@ -59,7 +61,7 @@ targets:
 
 Job intervals, timeouts, and freshness limits accept positive seconds (`30`, `30s`), milliseconds (`500ms`), minutes (`5m`), or hours (`2h`). Values below 100 ms are clamped to 100 ms.
 
-Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, duration, optional error, and a values map that supports native JSON booleans, numbers, strings, and timestamps. Job values include task-qualified keys plus short keys only when that field occurs in one task. If two tasks return the same short field name, both qualified keys remain and the ambiguous alias is omitted regardless of task order. Runtime exception details are redacted from result payloads and logs; configuration validation errors remain descriptive.
+Task status is `OK`, `WARN`, `ERROR`, or `UNKNOWN`. Results carry a timestamp, duration, optional error, and a values map that supports native JSON booleans, numbers, strings, and timestamps. Job values include task-qualified keys plus short keys only when exactly one configured task owns that field. If two tasks can return the same short field name, both qualified keys remain and the ambiguous alias is omitted regardless of run order or task failure; configured fields from failed tasks remain present with `null` values. Runtime exception details are redacted from result payloads and logs; configuration validation errors remain descriptive.
 
 ## Configuration-first integrations
 
@@ -88,7 +90,7 @@ Configuration is validated once when Jobs load. Invalid Jobs and Tasks remain is
 
 ### HTTP requests
 
-Without `extract`, an HTTP Task keeps the original health-check behavior and returns `reachable` and `statusCode`; 200–399 are expected by default. With extraction configured, the response must be JSON and is read only up to `maxResponseBytes` plus one byte. The default limit is 1 MiB; the allowed range is 1 byte to 5 MiB. The optional Task `timeout` overrides the Job timeout. `expectedStatusCodes` defaults to all 200–399 codes.
+Without `extract`, an HTTP Task keeps the original health-check behavior and returns `reachable` and `statusCode`; 200–399 are expected by default. With extraction configured, the response must be JSON and is read only up to `maxResponseBytes` plus one byte. The default limit is 1 MiB; the allowed range is 1 byte to 5 MiB. The optional Task `timeout` overrides the Job timeout and is enforced as one overall request deadline across connection, response headers, and body reads. `expectedStatusCodes` defaults to all 200–399 codes.
 
 Methods `GET` and `POST` are supported. A POST `body` is encoded as JSON. `headers` must map strings to strings. Credentials are referenced through environment-variable names, not literal values:
 
@@ -111,7 +113,7 @@ Missing variables produce a safe Task error naming the missing variable without 
 
 ### JSON paths and extraction
 
-`extract` maps output field names to a restricted path and type. Paths support the root `$`, object properties, and numeric array indices: `$`, `$.status.online`, `$.cluster.nodes.ready`, and `$.devices[0].temperature`. There are no wildcards, filters, expressions, templates, or executable code. Property names start with a letter or underscore and may then contain letters, digits, underscores, or hyphens.
+`extract` maps output field names to a restricted path and type. Output field names start with a letter or underscore and may then contain letters, digits, underscores, or hyphens. Paths support the root `$`, object properties, and numeric array indices: `$`, `$.status.online`, `$.cluster.nodes.ready`, and `$.devices[0].temperature`. There are no wildcards, filters, expressions, templates, or executable code. Property names start with a letter or underscore and may then contain letters, digits, underscores, or hyphens.
 
 Supported types are `string`, `integer`, `number`, `boolean`, and `timestamp`. Booleans accept JSON booleans and the strings `true`/`false` (case-insensitive). Integers reject fractional values. Numbers must be finite. Timestamps accept ISO date/time strings and normalize timezone-free values to UTC. Paths can traverse arrays and objects, but output values must be scalar or null.
 
@@ -300,7 +302,7 @@ Example item from `GET /api/jobs`:
 
 Freshness is calculated against the current time for each HTTP response using the Job's existing `freshness.maxAge` policy and most recent successful timestamp. It does not depend on the last MQTT publication. `FRESH` and `STALE` describe time since success, independently of the latest result status; `UNKNOWN` means there is no successful timestamp or no max-age policy. Provider failures, stale Jobs, invalid configuration, and MQTT disconnection are represented in the JSON body and do not turn a successful read into an HTTP error. Unknown Job IDs return 404.
 
-The HTTP API has no authentication, so keep it on a trusted private network. The default `HIA_HOST` / `web.host` is `127.0.0.1`; for a systemd host, set it to the host's private or Tailscale interface address. In Kubernetes, the process must listen on the Pod interface (`web.host: 0.0.0.0`) for its ClusterIP Service; keep that Service internal and make any Ingress reachable only through the home/Tailscale network. The current `ops-autopilot` development chart uses this Pod bind and has `/health` and `/api` Ingress routes; external reachability still depends on private DNS, routing, ingress, and Tailscale ACLs and must be checked from the watchdog VM.
+The HTTP API has no authentication, so keep it on a trusted private network. The default `HIA_HOST` / `web.host` is `127.0.0.1`; for a systemd host, set it to the host's private or Tailscale interface address. In Kubernetes, the process must listen on the Pod interface (`web.host: 0.0.0.0`) for its ClusterIP Service; keep that Service internal and make any Ingress reachable only through the home/Tailscale network. Host headers are limited to loopback/private IP literals and the existing `ha-infra.home.k3s.com` ingress name by default. Set `HIA_ALLOWED_HOSTS` to a comma-separated list or `web.allowedHosts` to a list when using another DNS name. The current `ops-autopilot` development chart uses this Pod bind and has `/health` and `/api` Ingress routes; external reachability still depends on private DNS, routing, ingress, and Tailscale ACLs and must be checked from the watchdog VM.
 
 From that private network, verify with:
 
@@ -311,7 +313,7 @@ curl --fail --show-error http://<private-agent-address>:8080/api/jobs
 
 Do not publish these routes to the public Internet. The watchdog should continue to check home connectivity, Proxmox/K3s/Home Assistant reachability, and external Investory Cloud Run directly. Those independent checks detect conditions such as a home outage that also makes Infra Agent unreachable; use the Agent's summary to avoid duplicating its detailed Job collection and interpretation.
 
-Each Job has a non-blocking execution lock shared by scheduled and manual runs. A run already in progress is skipped by the scheduler and rejected with HTTP 409 for a manual request; different Jobs can run concurrently. Ping checks use at most eight workers and a bounded wait, preserving `UP`, `DOWN`, `online`, and `total` result meanings.
+Each Job has a non-blocking execution lock shared by scheduled and manual runs. A run already in progress is skipped by the scheduler and rejected with HTTP 409 for a manual request; different Jobs can run concurrently. Ping checks use at most eight workers under one overall task deadline, preserving `UP`, `DOWN`, `online`, and `total` result meanings. Shutdown waits up to five seconds for scheduled workers before continuing to MQTT cleanup.
 
 ## Deployment verification and rollback
 
@@ -333,7 +335,17 @@ GitHub Actions runs the test suite on pull requests and pushes to `main`. After 
 
 ## Tests and current limits
 
-Run `pytest`. Tests cover provider behavior, extraction and transformations, health rules, configuration validation/isolation, HTTP timeouts and bounds, MQTT discovery compatibility, and the YAML-only example. Runtime results remain in memory, the web UI/API has no authentication, configuration is not hot-reloaded, and no history or alerting service is included. Keep the existing production monitor until changes are reviewed, deployed through the separate GitOps process, and verified in Home Assistant.
+Run the suite and focused compatibility checks with:
+
+```sh
+python -m pip install -e '.[test]'
+python -m pytest -q
+python -m pytest -q tests/test_agent.py::test_all_configured_job_discovery_matches_pre_change_golden_contract
+HIA_REQUIRE_MQTT_DOCKER=1 python -m pytest -q tests/test_mqtt_broker.py
+python -c 'from pathlib import Path; from home_infra_agent.config import discover_jobs; jobs, errors = discover_jobs(Path("config/jobs")); print(f"{len(jobs)} jobs, {len(errors)} errors"); raise SystemExit(bool(errors))'
+```
+
+The broker integration test requires Docker and runs an isolated Mosquitto broker. Tests cover provider behavior, extraction and transformations, health rules, configuration validation/isolation, HTTP timeouts and bounds, MQTT discovery compatibility, and the YAML-only example. Runtime results remain in memory, the web UI/API has no authentication, configuration is not hot-reloaded, and no history or alerting service is included. Keep the existing production monitor until changes are reviewed, deployed through the separate GitOps process, and verified in Home Assistant.
 
 ### Project status: Stable / Maintenance
 

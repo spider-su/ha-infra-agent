@@ -115,6 +115,36 @@ def test_aliases_are_unique_and_collision_order_independent(tmp_path, monkeypatc
     assert result.values == reversed_result.values
 
 
+def test_mqtt_alias_ownership_is_stable_when_one_configured_task_fails(tmp_path, monkeypatch):
+    import home_infra_agent.core as core
+
+    class Values:
+        def execute(self, task_id, config, timeout):
+            if config.get("fail"):
+                raise RuntimeError("unavailable")
+            return "OK", {"a": "a", "b": "b"}
+
+    monkeypatch.setitem(core.PROVIDERS, "http", Values())
+    tasks = {
+        "a": {"type": "http", "url": "https://unused", "extract": {"same": {"path": "$.a", "type": "string"}}},
+        "b": {"type": "http", "url": "https://unused", "extract": {"same": {"path": "$.b", "type": "string"}}},
+    }
+    job = Job("stable", "Stable", tmp_path, {"mqtt": {"topic": "home/stable"}}, tasks)
+    healthy = job.run()
+    failed_job = Job("stable", "Stable", tmp_path, {"mqtt": {"topic": "home/stable"}},
+                     {**tasks, "a": {**tasks["a"], "fail": True}})
+    failed = failed_job.run()
+    assert "same" not in healthy.values and "same" not in failed.values
+    assert failed.values["a.same"] is None and failed.values["b.same"] == "b"
+
+    def entity_ids(result):
+        return {json.loads(payload)["unique_id"] for _, payload in discovery_configs(job, result)
+                if json.loads(payload)["unique_id"].endswith(("_a_same", "_b_same", "_same"))}
+
+    assert entity_ids(healthy) == entity_ids(failed)
+    assert "home_infra_agent_stable_same" not in entity_ids(failed)
+
+
 def test_job_execution_lock_rejects_duplicate_and_allows_other_job(tmp_path, monkeypatch):
     import home_infra_agent.core as core
     entered, both_entered, release = threading.Event(), threading.Event(), threading.Event()
@@ -195,6 +225,32 @@ def test_ping_is_parallel_with_bounded_workers(monkeypatch):
     assert 1 < peak <= 8
 
 
+def test_ping_uses_one_overall_deadline_across_target_batches(monkeypatch):
+    import time
+
+    calls = []
+    def timed_out(args, **kwargs):
+        calls.append(kwargs["timeout"])
+        time.sleep(kwargs["timeout"])
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr("subprocess.run", timed_out)
+    started = time.monotonic()
+    status, values = PingProvider().execute(
+        "nodes", {"targets": {f"node{i}": "host" for i in range(20)}}, .15)
+    duration = time.monotonic() - started
+    assert status == "ERROR" and values["online"] == 0
+    assert duration < .4
+    assert calls and all(0 < timeout <= .15 for timeout in calls)
+
+
+def test_ping_provider_annotations_resolve():
+    from typing import Any, Mapping, get_type_hints
+    from home_infra_agent.providers.ping import PingProvider
+
+    assert get_type_hints(PingProvider.execute)["config"] == Mapping[str, Any]
+
+
 def test_state_freshness_and_failure_clear_known_metrics():
     old = "2000-01-01T00:00:00+00:00"
     payload = json.loads(state_payload("j", {"status": "ERROR", "timestamp": old,
@@ -229,6 +285,18 @@ def test_discovery_adds_freshness_entities_without_changing_existing_ids():
         assert matches[0]["state_topic"] == "home/proxmox/state"
         assert matches[0]["device"]["identifiers"] == ["home_infra_agent_proxmox"]
     assert any(cfg["unique_id"] == "home_infra_agent_proxmox_freshness" for cfg in configs.values())
+
+
+def test_failed_ping_run_keeps_configured_binary_sensor_topic():
+    job = Job("proxmox", "Proxmox", Path("."), {}, {
+        "nodes": {"type": "ping", "targets": {"home-lab-0": "192.0.2.1"}},
+    })
+    healthy = type("Result", (), {"values": {"nodes.home-lab-0": "UP", "home-lab-0": "UP"}})()
+    failed = type("Result", (), {"values": {"nodes.home-lab-0": None, "home-lab-0": None}})()
+    healthy_topics = {topic for topic, _ in discovery_configs(job, healthy)}
+    failed_topics = {topic for topic, _ in discovery_configs(job, failed)}
+    expected = "homeassistant/binary_sensor/home_infra_agent_proxmox_home_lab_0/config"
+    assert expected in healthy_topics and expected in failed_topics
 
 
 def test_all_configured_job_discovery_matches_pre_change_golden_contract():
@@ -269,7 +337,7 @@ def test_manual_run_origin_and_ui_escape(tmp_path):
     job = Job("j", malicious, tmp_path, {}, {}, False, "invalid")
     adapter = type("Adapter", (), {"is_connected": False})()
     engine = JobEngine([job])
-    server = AgentServer(("127.0.0.1", 0), engine, adapter)
+    server = AgentServer(("127.0.0.1", 0), engine, adapter, allowed_hosts=["api.example"])
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
@@ -283,6 +351,23 @@ def test_manual_run_origin_and_ui_escape(tmp_path):
             assert err.value.code == 403
         request = Request(base + "/api/jobs/j/run", method="POST", headers={"Origin": base})
         assert json.loads(urlopen(request).read())["status"] == "ERROR"
+        ingress = Request(base + "/health", headers={"Host": "ha-infra.home.k3s.com"})
+        assert json.loads(urlopen(ingress).read())["status"] == "ok"
+        configured_host = Request(base + "/health", headers={"Host": "api.example"})
+        assert json.loads(urlopen(configured_host).read())["status"] == "ok"
+        bad_host = Request(base + "/health", headers={"Host": "attacker.example"})
+        with pytest.raises(HTTPError) as err:
+            urlopen(bad_host)
+        assert err.value.code == 400
+        deep_route = Request(base + "/api/jobs/j/extra")
+        with pytest.raises(HTTPError) as err:
+            urlopen(deep_route)
+        assert err.value.code == 404
+        spoofed_origin = Request(base + "/api/jobs/j/run", method="POST",
+                                 headers={"Host": "ha-infra.home.k3s.com", "Origin": "https://evil.example"})
+        with pytest.raises(HTTPError) as err:
+            urlopen(spoofed_origin)
+        assert err.value.code == 403
     finally:
         server.shutdown(); server.server_close(); thread.join(2)
 
@@ -291,11 +376,11 @@ def test_mqtt_publish_deduplicates_discovery_and_clean_shutdown_is_offline():
     class Info:
         def wait_for_publish(self, timeout=None): pass
     class Client:
-        def __init__(self): self.messages = []; self.stopped = False; self.disconnected = False
+        def __init__(self): self.messages = []; self.stopped = False; self.disconnected = False; self.lifecycle = []
         def publish(self, topic, payload, qos, retain):
             self.messages.append((topic, payload, qos, retain)); return Info()
-        def loop_stop(self): self.stopped = True
-        def disconnect(self): self.disconnected = True
+        def loop_stop(self): self.stopped = True; self.lifecycle.append("loop_stop")
+        def disconnect(self): self.disconnected = True; self.lifecycle.append("disconnect")
     adapter = MqttAdapter({"enabled": True})
     client = Client()
     adapter.client = client
@@ -320,6 +405,9 @@ def test_mqtt_publish_deduplicates_discovery_and_clean_shutdown_is_offline():
     assert sum(topic == discovery_topic for topic, *_ in client.messages) == 2
     adapter.stop()
     assert not adapter.is_connected and client.stopped and client.disconnected
+    assert client.lifecycle == ["disconnect", "loop_stop"]
+    adapter.publish(job, result)
+    assert "proxmox" not in adapter._pending
     availability = [message[1] for message in client.messages if message[0] == "home-infra-agent/availability"]
     assert "online" in availability and all(message[3] for message in client.messages)
     assert availability[-1] == "offline"

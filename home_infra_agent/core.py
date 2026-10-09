@@ -114,21 +114,83 @@ def cron_matches(expression: str, local_time: datetime) -> bool:
             and day_match and local_time.month in months)
 
 
+def _cron_fields(expression: str) -> tuple[set[int], set[int], set[int], set[int], set[int]]:
+    fields = expression.split()
+    if len(fields) != 5:
+        raise ConfigError("schedule.cron must contain five fields")
+    minute, hour, day, month, weekday = fields
+    return (
+        _cron_field(minute, 0, 59, "minute"),
+        _cron_field(hour, 0, 23, "hour"),
+        _cron_field(day, 1, 31, "day"),
+        _cron_field(month, 1, 12, "month"),
+        _cron_field(weekday, 0, 7, "weekday"),
+    )
+
+
+def _cron_date_matches(day_field: str, weekday_field: str, local_date: datetime,
+                       days: set[int], months: set[int], weekdays: set[int]) -> bool:
+    cron_weekday = (local_date.weekday() + 1) % 7
+    weekday_match = cron_weekday in weekdays or (cron_weekday == 0 and 7 in weekdays)
+    day_match = local_date.day in days
+    if day_field != "*" and weekday_field != "*":
+        day_match = day_match or weekday_match
+    else:
+        day_match = day_match and weekday_match
+    return day_match and local_date.month in months
+
+
 def next_cron_run(expression: str, timezone_name: str, after: datetime | None = None) -> datetime:
     try:
         zone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
         raise ConfigError(f"invalid schedule timezone: {timezone_name!r}") from exc
+    fields = expression.split()
+    minutes, hours, days, months, weekdays = _cron_fields(expression)
     cursor = after or datetime.now(timezone.utc)
     if cursor.tzinfo is None:
         cursor = cursor.replace(tzinfo=zone)
-    cursor = cursor.astimezone(timezone.utc).replace(second=0, microsecond=0) + timedelta(minutes=1)
-    for _ in range(366 * 24 * 60):
-        local_time = cursor.astimezone(zone)
-        if cron_matches(expression, local_time):
-            return local_time
-        cursor += timedelta(minutes=1)
+    cursor_utc = cursor.astimezone(timezone.utc).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    local_date = cursor_utc.astimezone(zone).date()
+    search_end = cursor_utc + timedelta(days=366)
+    sorted_hours, sorted_minutes = sorted(hours), sorted(minutes)
+    for day_offset in range(367):
+        date = datetime.combine(local_date + timedelta(days=day_offset), datetime.min.time())
+        if not _cron_date_matches(fields[2], fields[4], date, days, months, weekdays):
+            continue
+        for hour in sorted_hours:
+            for minute in sorted_minutes:
+                wall_time = date.replace(hour=hour, minute=minute)
+                candidates = []
+                for fold in (0, 1):
+                    candidate = wall_time.replace(tzinfo=zone, fold=fold)
+                    if candidate.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None) == wall_time:
+                        candidates.append(candidate)
+                for candidate in sorted(candidates, key=lambda value: value.astimezone(timezone.utc)):
+                    candidate_utc = candidate.astimezone(timezone.utc)
+                    if cursor_utc <= candidate_utc <= search_end:
+                        return candidate
     raise ConfigError("schedule.cron has no matching time within one year")
+
+
+def _configured_fields(task: Mapping[str, Any]) -> set[str] | None:
+    if isinstance(task.get("extract"), Mapping):
+        return set(task["extract"])
+    kind = task.get("type")
+    if kind == "http":
+        return {"reachable", "statusCode"}
+    if kind == "ping":
+        return {str(name) for name in task.get("targets", {})} | {"online", "total"}
+    if kind == "investory_postgres":
+        return {"portfolioId", "snapshotDate", "baseCurrency", "equity", "totalProfit"}
+    if kind == "solarman":
+        from .providers.solarman import FIELDS
+        return set(FIELDS) | {"source_status", "collection_time", "source_age_seconds"}
+    if kind == "kubernetes":
+        return {"nodesReady", "nodesTotal", "podsRunning", "podsNotReady", "podsPending", "podsFailed",
+                "podsUnknown", "deploymentsAvailable", "deploymentsTotal", "statefulsetsReady",
+                "statefulsetsTotal", "daemonsetsReady", "daemonsetsTotal", "workloadsStatus"}
+    return None
 
 
 @dataclass
@@ -197,13 +259,38 @@ class Job:
             statuses = [result.status for result in results.values()]
             status = "UNKNOWN" if not results else "ERROR" if "ERROR" in statuses else "WARN" if "WARN" in statuses else "OK"
             values: dict[str, Any] = {}
-            aliases: dict[str, list[Any]] = {}
+            owners: dict[str, set[str]] = {}
+            dynamic_kubernetes: set[str] = set()
+            observed_owners: dict[str, set[str]] = {}
+            for configured_task_id, task_config in self.task_configs.items():
+                fields = _configured_fields(task_config)
+                if fields is None:
+                    continue
+                for field_name in fields:
+                    owners.setdefault(field_name, set()).add(configured_task_id)
+                if task_config.get("type") == "kubernetes" and "extract" not in task_config:
+                    dynamic_kubernetes.add(configured_task_id)
+            for task_id, task_result in results.items():
+                for key in task_result.values:
+                    observed_owners.setdefault(key, set()).add(task_id)
             for task_id in sorted(results):
                 for key, value in sorted(results[task_id].values.items()):
                     values[f"{task_id}.{key}"] = value
-                    aliases.setdefault(key, []).append(value)
-            # Keep legacy aliases where unique; ambiguous names are omitted.
-            values.update({key: items[0] for key, items in aliases.items() if len(items) == 1})
+                    field_owners = owners.get(key, set())
+                    if key.startswith("node_"):
+                        field_owners = field_owners | dynamic_kubernetes
+                    if not field_owners:
+                        field_owners = observed_owners[key]
+                    if field_owners == {task_id}:
+                        values.setdefault(key, value)
+            for task_id, task_config in self.task_configs.items():
+                fields = _configured_fields(task_config) or set()
+                task_values = results.get(task_id)
+                for key in fields:
+                    values.setdefault(f"{task_id}.{key}",
+                                      task_values.values.get(key) if task_values else None)
+                    if owners.get(key) == {task_id}:
+                        values.setdefault(key, task_values.values.get(key) if task_values else None)
             if status in {"OK", "WARN"}:
                 with self.lock:
                     self.last_success = utc_now()
@@ -316,10 +403,12 @@ class JobEngine:
             delay = max(.1, job.interval - (time.monotonic() - started))
             self.stop_event.wait(delay)
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
         self.stop_event.set()
+        deadline = time.monotonic() + max(0.0, timeout)
         for thread in self.threads:
-            thread.join()
+            thread.join(max(0.0, deadline - time.monotonic()))
+        return all(not thread.is_alive() for thread in self.threads)
 
 def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
     """Compatibility export; configuration schemas are owned by config.py."""
