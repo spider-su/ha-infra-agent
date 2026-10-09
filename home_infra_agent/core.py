@@ -181,6 +181,8 @@ def _configured_fields(task: Mapping[str, Any]) -> set[str] | None:
         return {"reachable", "statusCode"}
     if kind == "ping":
         return {str(name) for name in task.get("targets", {})} | {"online", "total"}
+    if kind == "speedtest":
+        return {"ping_ms", "download_mbps", "upload_mbps", "server_name", "server_country", "server_id", "tested_at"}
     if kind == "investory_postgres":
         return {"portfolioId", "snapshotDate", "baseCurrency", "equity", "totalProfit"}
     if kind == "solarman":

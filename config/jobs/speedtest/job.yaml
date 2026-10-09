@@ -1,0 +1,22 @@
+name: Internet Speedtest
+schedule:
+  cron: "0 8,20 * * *"
+  timezone: Europe/Warsaw
+timeout: 120s
+freshness:
+  maxAge: 14h
+mqtt:
+  enabled: true
+  topic: home/network/speedtest
+  device:
+    name: Internet Speedtest
+    manufacturer: Custom
+    model: Home Infra Agent
+  entities:
+    ping_ms: {name: Speedtest latency, unit_of_measurement: ms, device_class: duration, state_class: measurement}
+    download_mbps: {name: Speedtest download, unit_of_measurement: Mbit/s, device_class: data_rate, state_class: measurement}
+    upload_mbps: {name: Speedtest upload, unit_of_measurement: Mbit/s, device_class: data_rate, state_class: measurement}
+    server_name: {name: Speedtest server}
+    server_country: {name: Speedtest country}
+    server_id: {name: Speedtest server ID}
+    tested_at: {name: Speedtest source timestamp, device_class: timestamp}

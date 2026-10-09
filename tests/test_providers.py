@@ -4,12 +4,12 @@ from pathlib import Path
 from types import ModuleType
 
 from home_infra_agent.core import Job, JobEngine, TaskProvider
-from home_infra_agent.providers import PROVIDERS, KubernetesProvider
+from home_infra_agent.providers import PROVIDERS, KubernetesProvider, SpeedtestProvider
 from home_infra_agent.providers.investory import InvestoryPostgresProvider
 
 
 def test_static_provider_registry_contains_all_configured_sources():
-    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman"}
+    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest"}
     assert all(isinstance(provider, TaskProvider) for provider in PROVIDERS.values())
 
 
@@ -103,3 +103,18 @@ def test_thread_scheduler_runs_and_stops_cleanly(monkeypatch):
     assert engine.threads
     assert all(not thread.is_alive() for thread in engine.threads)
     assert job.last_result.status == "OK"
+
+
+def test_speedtest_normalizes_cli_json(monkeypatch):
+    class Completed:
+        returncode = 0
+        stdout = '{"ping": 12.5, "download": 25000000, "upload": 8000000, "timestamp": "2026-10-09T08:00:00Z", "server": {"id": "123", "name": "Warsaw", "country": "Poland"}}'
+        stderr = ""
+
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/speedtest-cli")
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: Completed())
+    status, values = SpeedtestProvider().execute("speed", {}, 120)
+    assert status == "OK"
+    assert values == {"ping_ms": 12.5, "download_mbps": 25.0, "upload_mbps": 8.0,
+                      "server_name": "Warsaw", "server_country": "Poland", "server_id": "123",
+                      "tested_at": "2026-10-09T08:00:00Z"}

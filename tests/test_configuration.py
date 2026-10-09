@@ -13,9 +13,9 @@ def test_existing_job_yaml_loads_after_configuration_schema_extension():
     root = Path(__file__).parents[1]
     jobs, errors = discover_jobs(root / "config/jobs")
     assert not errors
-    assert {job.id for job in jobs} == {"investory", "proxmox", "solarman"}
+    assert {job.id for job in jobs} == {"investory", "network", "proxmox", "solarman", "speedtest"}
     from home_infra_agent.providers import PROVIDERS
-    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman"}
+    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest"}
     assert all(job.valid and not job.task_errors for job in jobs)
 
 

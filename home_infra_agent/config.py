@@ -41,6 +41,17 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
             raise ConfigError(f"task {task_id}: target names must start with a letter or underscore and contain only letters, digits, underscores, or hyphens")
         if {"online", "total"} & set(targets):
             raise ConfigError(f"task {task_id}: target names cannot use the built-in online or total fields")
+    if kind == "speedtest":
+        unknown = set(config) - {"type", "serverId"}
+        if unknown:
+            raise ConfigError(f"task {task_id}: unsupported Speedtest option {sorted(unknown)[0]}")
+        if "serverId" in config:
+            try:
+                server_id = int(config["serverId"])
+                if server_id <= 0:
+                    raise ValueError
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(f"task {task_id}: serverId must be a positive integer") from exc
     if kind == "http":
         allowed_http = {"type", "url", "method", "headers", "auth", "timeout", "body",
                         "expectedStatusCodes", "maxResponseBytes", "extract", "health"}

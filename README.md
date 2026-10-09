@@ -352,3 +352,7 @@ The broker integration test requires Docker and runs an isolated Mosquitto broke
 The core architecture is frozen. Use YAML for new integrations that fit the existing HTTP provider. Add a specialized provider only when a concrete source requires behavior the generic provider cannot express clearly. Existing MQTT topics, unique IDs, and entity contracts are stable; preserve them for compatibility. Prioritize bug fixes and compatibility over new abstractions. No HIA-owned result database or general workflow engine is planned.
 
 HIA does not replace the separate external Google VM watchdog. Its probes and alert path are managed outside this repository and have not been verified as part of this freeze audit.
+
+## Bundled network monitoring jobs
+
+The bundled `network` Job publishes gateway (`192.168.1.1`) and external ICMP (`8.8.8.8`) reachability every ten minutes. The bundled `speedtest` Job runs at 08:00 and 20:00 in `Europe/Warsaw`, using `speedtest-cli --secure --json`; its twice-daily result has a fourteen-hour freshness limit. Speedtest values are normalized to Mbit/s. Both jobs publish through the existing MQTT Discovery and availability contract.

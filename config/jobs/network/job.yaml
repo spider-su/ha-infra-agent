@@ -1,0 +1,18 @@
+name: Network Reachability
+schedule:
+  interval: 10m
+timeout: 3s
+freshness:
+  maxAge: 30m
+mqtt:
+  enabled: true
+  topic: home/network
+  device:
+    name: Network Reachability
+    manufacturer: Custom
+    model: Home Infra Agent
+  entities:
+    gateway: {name: LAN gateway, component: binary_sensor, payload_on: UP, payload_off: DOWN, device_class: connectivity}
+    internet: {name: Internet ICMP, component: binary_sensor, payload_on: UP, payload_off: DOWN, device_class: connectivity}
+    online: {name: Reachable targets, unit_of_measurement: targets, state_class: measurement}
+    total: {name: Reachability targets, unit_of_measurement: targets, state_class: measurement}
