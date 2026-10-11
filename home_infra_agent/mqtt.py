@@ -96,10 +96,14 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant",
         for key in known_keys:
             values.setdefault(key, None)
     metadata = mqtt.get("entities", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
     metadata_fields = {"name", "unit_of_measurement", "device_class", "state_class", "expire_after", "icon"}
     max_age = _job_max_age(job)
+    auto_discover_values = mqtt.get("auto_discover_values", True)
     for key, value in values.items():
         key_str = str(key)
+        if auto_discover_values is False and key_str not in metadata:
+            continue
         slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
         entity_metadata = metadata.get(key_str, {}) if isinstance(metadata, dict) else {}
         entity_metadata = entity_metadata if isinstance(entity_metadata, dict) else {}
@@ -152,6 +156,10 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant",
         if max_age:
             config.setdefault("expire_after", max_age)
         configs.append((f"{prefix}/{component}/{uid}/config", json.dumps(config, separators=(",", ":"))))
+    for retired in mqtt.get("retire_entities", []):
+        key_str = str(retired)
+        slug = re.sub(r"[^a-zA-Z0-9_]", "_", key_str)
+        configs.append((f"{prefix}/sensor/{identifier}_{slug}/config", ""))
     return configs
 
 

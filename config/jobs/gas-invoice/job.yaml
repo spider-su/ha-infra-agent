@@ -6,6 +6,8 @@ freshness:
   maxAge: 900s
 mqtt:
   enabled: true
+  auto_discover_values: false
+  retire_entities: [source_state_changed, reading.source_state_changed]
   topic: home/meters/gas
   device:
     name: Gas invoice MQTT
