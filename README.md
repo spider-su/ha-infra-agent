@@ -33,6 +33,8 @@ Open <http://127.0.0.1:8080>. The initial Proxmox job checks `home-lab-0` throug
 
 Set `HIA_CONFIG_DIR` to the directory containing `application.yaml` and `jobs/`; defaults to `/etc/home-infra-agent`. `HIA_JOBS_DIR` can override the jobs path. Runtime state is held in memory and never written to config. A job is loaded from `jobs/<id>/job.yaml`; every other `*.yaml` in that directory is one task. A malformed Job is reported but does not stop its siblings. Task files and schemas are validated during startup; an invalid Task is reported before its provider is called while its sibling Tasks and Jobs continue.
 
+The external watchdog can include `X-External-Monitor-Token` on its `GET /api/jobs` request. When `HIA_EXTERNAL_MONITOR_TOKEN` is configured and the header matches, the Agent atomically increments a persisted counter and creates a normalized Job result. It is published by the ordinary Job result mapper and MQTT adapter as **External Monitor** at `home/external_monitor_heartbeat/state`; no separate MQTT publishing path is used. Ordinary `/api/jobs` requests do not count. The HA heartbeat entities expire after five hours, allowing an expected four-hour check interval plus one hour of tolerance. Store the token in the deployment secret mechanism. The state file defaults to `/var/lib/home-infra-agent/external-monitor-heartbeat.json`; set `HIA_EXTERNAL_MONITOR_STATE_FILE` to a writable persistent path when deploying in a container or Kubernetes. The systemd unit and Docker image prepare the default state directory.
+
 Example job:
 
 ```yaml

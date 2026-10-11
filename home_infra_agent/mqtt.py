@@ -232,7 +232,8 @@ class MqttAdapter:
     def _publish_loop(self) -> None:
         while True:
             with self._condition:
-                self._condition.wait_for(lambda: self._stopping or (self.connected.is_set() and self._pending))
+                self._condition.wait_for(lambda: self._stopping or
+                                         (self.connected.is_set() and self._pending))
                 if self._stopping:
                     return
                 job_id = next(iter(self._pending))

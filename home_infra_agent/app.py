@@ -1,6 +1,7 @@
 """HTTP UI and application lifecycle."""
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import json
 import logging
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 
 from .core import JobBusyError, JobEngine, utc_now
 from .config import discover_jobs
+from .heartbeat import ExternalMonitorHeartbeat, heartbeat_job, heartbeat_result
 from .mqtt import MqttAdapter, freshness_data
 
 log = logging.getLogger(__name__)
@@ -37,8 +39,12 @@ def load_app_config(path: Path) -> dict:
 
 class AgentServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, engine, adapter, allowed_hosts=()):
+    def __init__(self, address, engine, adapter, allowed_hosts=(), heartbeat=None,
+                 heartbeat_token="", heartbeat_output_job=None):
         self.engine, self.adapter = engine, adapter
+        self.heartbeat = heartbeat
+        self.heartbeat_token = heartbeat_token
+        self.heartbeat_output_job = heartbeat_output_job
         configured_hosts = allowed_hosts or ()
         if isinstance(configured_hosts, str):
             configured_hosts = configured_hosts.split(",")
@@ -130,6 +136,26 @@ class AgentHandler(BaseHTTPRequestHandler):
                         "schedulerRunning": self.server.engine.scheduler_running,
                         "observedAt": utc_now()})
         elif path == "/api/jobs":
+            supplied_token = self.headers.get("X-External-Monitor-Token", "")
+            if supplied_token and (not self.server.heartbeat or not self.server.heartbeat_token):
+                self._json({"error": "external monitor heartbeat is not configured"}, 503)
+                return
+            if supplied_token and not self.server.heartbeat_output_job:
+                self._json({"error": "external monitor heartbeat output is not configured"}, 503)
+                return
+            if supplied_token and not hmac.compare_digest(
+                    supplied_token.encode(), self.server.heartbeat_token.encode()):
+                self._json({"error": "invalid external monitor token"}, 401)
+                return
+            if supplied_token:
+                try:
+                    state = self.server.heartbeat.record()
+                    self.server.adapter.publish(self.server.heartbeat_output_job,
+                                                heartbeat_result(state))
+                except OSError:
+                    log.exception("unable to persist external monitor heartbeat")
+                    self._json({"error": "heartbeat could not be recorded"}, 503)
+                    return
             self._json([self._job_summary(job) for job in jobs.values()])
         elif path.startswith("/api/jobs/") and len(path.split("/")) == 4 and path.split("/")[3]:
             job = jobs.get(unquote(path.split("/")[3]))
@@ -214,7 +240,13 @@ def main() -> None:
     port = int(os.getenv("HIA_PORT", app_config.get("web", {}).get("port", 8080)))
     web_config = app_config.get("web", {})
     allowed_hosts = os.getenv("HIA_ALLOWED_HOSTS", web_config.get("allowedHosts", ()))
-    server = AgentServer((host, port), engine, adapter, allowed_hosts)
+    heartbeat_path = Path(os.getenv(
+        "HIA_EXTERNAL_MONITOR_STATE_FILE",
+        "/var/lib/home-infra-agent/external-monitor-heartbeat.json"))
+    heartbeat = ExternalMonitorHeartbeat(heartbeat_path)
+    heartbeat_token = os.getenv("HIA_EXTERNAL_MONITOR_TOKEN", "")
+    server = AgentServer((host, port), engine, adapter, allowed_hosts,
+                         heartbeat, heartbeat_token, heartbeat_job())
     stopped = threading.Event()
     def stop(*_):
         if not stopped.is_set():
