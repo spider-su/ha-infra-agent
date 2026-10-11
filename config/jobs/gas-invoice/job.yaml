@@ -22,3 +22,10 @@ mqtt:
     active_mode: {name: Gas active season mode, expire_after: 900}
     step_m3_per_day: {name: Gas configured daily step, unit_of_measurement: "m³/d", state_class: measurement, expire_after: 900}
     calculated_at: {name: Gas calculation time, device_class: timestamp, expire_after: 900}
+    real_consumption_m3: {name: Gas real consumption since previous reading, unit_of_measurement: "m³", state_class: measurement, expire_after: 900}
+    billing_currency: {name: Gas billing currency, expire_after: 900}
+    unit_price_pln_per_m3: {name: Gas unit price, unit_of_measurement: "PLN/m³", state_class: measurement, expire_after: 900}
+    variable_charge_pln: {name: Gas variable charge, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    fixed_charge_pln: {name: Gas fixed charge, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    total_charge_pln: {name: Gas total payable, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    charge_status: {name: Gas charge status, expire_after: 900}

@@ -8,11 +8,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..errors import ConfigError
 from .base import TaskProvider
+from .meter_billing import FIELDS as BILLING_FIELDS, calculate_billing, validate_config as validate_billing_config
 
 FIELDS = {
     "cumulative_m3", "estimated_cumulative_m3", "estimated_since_reading_m3",
     "last_reading_m3", "last_reading_at", "active_mode", "step_m3_per_day",
     "calculated_at",
+    *BILLING_FIELDS,
 }
 MODES = {"auto", "summer", "winter"}
 
@@ -70,7 +72,7 @@ def _season_for_day(day: date, seasons: Mapping[str, Mapping[str, Any]]) -> str:
 
 
 def validate_config(config: Mapping[str, Any], task_id: str = "meter") -> None:
-    allowed = {"type", "timezone", "mode", "reading", "seasons"}
+    allowed = {"type", "timezone", "mode", "reading", "seasons", "reading_history", "billing"}
     unknown = set(config) - allowed
     if unknown:
         raise ConfigError(f"task {task_id}: unsupported calculated meter option {sorted(unknown)[0]}")
@@ -104,6 +106,7 @@ def validate_config(config: Mapping[str, Any], task_id: str = "meter") -> None:
     probe = date(2000, 1, 1)
     for offset in range(366):
         _season_for_day(probe + timedelta(days=offset), seasons)
+    validate_billing_config(config, timezone_name, float(reading["value_m3"]), _parse_reading_at(reading["at"], timezone_name), task_id)
 
 
 def _next_boundary(local_now: datetime, mode: str, seasons: Mapping[str, Mapping[str, Any]]) -> datetime:
@@ -142,7 +145,7 @@ def calculate(config: Mapping[str, Any], now: datetime) -> dict[str, Any]:
     if active_mode == "auto":
         active_mode = _season_for_day(current.date(), seasons)
     step = float(seasons[active_mode]["step_m3_per_day"])
-    return {
+    values = {
         "cumulative_m3": round(reading_m3, 4),
         "estimated_cumulative_m3": round(estimated, 4),
         "estimated_since_reading_m3": round(estimated - reading_m3, 4),
@@ -152,6 +155,8 @@ def calculate(config: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         "step_m3_per_day": step,
         "calculated_at": current.isoformat(timespec="seconds"),
     }
+    values.update(calculate_billing(config, reading_m3, reading_at))
+    return values
 
 
 class CalculatedMeterProvider(TaskProvider):

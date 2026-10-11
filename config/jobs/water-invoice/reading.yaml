@@ -13,3 +13,9 @@ seasons:
     start: "11-01"
     end: "03-31"
     step_m3_per_day: 0.2115
+
+reading_history: []
+billing:
+  currency: PLN
+  prices_include_tax: true
+  price_periods: []
