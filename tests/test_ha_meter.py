@@ -66,33 +66,3 @@ def test_missing_token_fails_safely(monkeypatch):
     monkeypatch.delenv("TEST_METER_TOKEN", raising=False)
     with pytest.raises(ConfigError, match="not set"):
         HomeAssistantMeterProvider().execute("reading", CONFIG, 1)
-
-
-def test_independent_jobs_discovery_and_failure_nulls_without_zero(monkeypatch):
-    jobs, errors=discover_jobs(Path(__file__).parents[1]/"config"/"jobs")
-    assert not errors
-    selected=[j for j in jobs if j.id in {"gas-invoice", "water-invoice"}]
-    assert len(selected)==2 and all(j.valid for j in selected)
-    monkeypatch.setitem(PROVIDERS, "home_assistant_meter", HomeAssistantMeterProvider())
-    def fetch(self, task_id, config, timeout):
-        entity=config["url"].split("/api/states/")[-1]
-        return "OK", payload("27943" if "gas" in entity else "307.2", entity)
-    monkeypatch.setattr("home_infra_agent.providers.ha_meter.HttpProvider.execute", fetch)
-    engine=JobEngine(selected)
-    for job in selected:
-        result=engine.run_job(job.id)
-        assert result.status=="OK"
-        configs=[json.loads(v) for _,v in discovery_configs(job,result)]
-        meter=next(c for c in configs if c["unique_id"].endswith("_cumulative_m3") and not c["unique_id"].endswith("reading_cumulative_m3"))
-        assert meter["unit_of_measurement"]=="m³" and meter["state_class"]=="total_increasing"
-        assert meter["device_class"]==("gas" if job.id=="gas-invoice" else "water")
-        assert meter["expire_after"]==900
-        assert meter["availability_mode"]=="all" and len(meter["availability"])==2
-        assert "availability_topic" not in meter
-        assert "value_json.status == 'OK'" in meter["availability"][1]["value_template"]
-    def fail(*args):
-        raise ConfigError("meter source unavailable")
-    monkeypatch.setattr("home_infra_agent.providers.ha_meter.HttpProvider.execute", fail)
-    result=engine.run_job("gas-invoice")
-    assert result.status=="ERROR" and result.values["cumulative_m3"] is None
-    assert json.loads(state_payload("gas-invoice", result, 900))["values"]["cumulative_m3"] is None

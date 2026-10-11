@@ -9,7 +9,7 @@ from home_infra_agent.providers.investory import InvestoryPostgresProvider
 
 
 def test_static_provider_registry_contains_all_configured_sources():
-    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest", "presence", "home_assistant_meter"}
+    assert set(PROVIDERS) == {"ping", "http", "kubernetes", "investory_postgres", "solarman", "speedtest", "presence", "home_assistant_meter", "calculated_meter"}
     assert all(isinstance(provider, TaskProvider) for provider in PROVIDERS.values())
 
 

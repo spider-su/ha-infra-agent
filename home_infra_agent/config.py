@@ -47,6 +47,9 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
             raise ConfigError(f"task {task_id}: baseUrl must be a plain Home Assistant origin")
         from .providers.ha_meter import http_config
         validate_task(task_id, http_config(config))
+    if kind == "calculated_meter":
+        from .providers.calculated_meter import validate_config
+        validate_config(config, task_id)
     if kind == "ping":
         targets = config.get("targets")
         if not isinstance(targets, dict) or not targets:

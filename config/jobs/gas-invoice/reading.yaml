@@ -1,4 +1,15 @@
-type: home_assistant_meter
-baseUrl: http://192.168.1.67:8123
-entityId: input_number.historical_gas_consumption
-tokenEnv: HIA_HOME_ASSISTANT_TOKEN
+type: calculated_meter
+timezone: Europe/Warsaw
+mode: auto
+reading:
+  value_m3: 27943.0
+  at: "2026-10-11T17:24:05+02:00"
+seasons:
+  summer:
+    start: "04-01"
+    end: "10-31"
+    step_m3_per_day: 0.45
+  winter:
+    start: "11-01"
+    end: "03-31"
+    step_m3_per_day: 1.8
