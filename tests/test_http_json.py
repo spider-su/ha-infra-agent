@@ -238,6 +238,34 @@ def test_http_timeout_bounds_dns_resolution(monkeypatch):
     assert duration < .3
 
 
+def test_timed_out_dns_lookups_have_a_global_thread_bound(monkeypatch):
+    import socket
+    from home_infra_agent.providers.http import _RequestDeadline
+
+    blocked = threading.Event()
+    def blocked_lookup(*_args, **_kwargs):
+        blocked.wait()
+        return []
+    monkeypatch.setattr(socket, "getaddrinfo", blocked_lookup)
+    try:
+        for _ in range(8):
+            deadline = _RequestDeadline(.03)
+            with pytest.raises(TimeoutError):
+                deadline.resolve("blocked.invalid", 80)
+        resolver_threads = [thread for thread in threading.enumerate()
+                            if thread.name == "http-dns-lookup" and thread.is_alive()]
+        assert len(resolver_threads) == 4
+    finally:
+        blocked.set()
+    limit = time.monotonic() + 1
+    while time.monotonic() < limit and any(
+            thread.name == "http-dns-lookup" and thread.is_alive()
+            for thread in threading.enumerate()):
+        time.sleep(.01)
+    assert not any(thread.name == "http-dns-lookup" and thread.is_alive()
+                   for thread in threading.enumerate())
+
+
 def test_http_timeout_validation_accepts_subsecond_duration():
     validate_task("status", {"type": "http", "url": "https://example.invalid", "timeout": "500ms"})
 

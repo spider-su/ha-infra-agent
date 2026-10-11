@@ -100,6 +100,28 @@ def test_invalid_task_configuration():
         validate_task("unknown", {"type": "made-up"})
 
 
+@pytest.mark.parametrize("config", [
+    {"type": "presence", "targets": {"phone": "192.0.2.1"}, "awayAfter": 1.9},
+    {"type": "presence", "targets": {"phone": "192.0.2.1"}, "awayAfter": True},
+    {"type": "speedtest", "serverId": 12.9},
+    {"type": "speedtest", "serverId": True},
+    {"type": "investory_postgres", "databaseUrlEnv": "DB_URL", "portfolioId": 1.9},
+    {"type": "investory_postgres", "databaseUrlEnv": "DB_URL", "portfolioId": True},
+    {"type": "solarman", "appIdEnv": "APP_ID", "appSecretEnv": "APP_SECRET",
+     "emailEnv": "EMAIL", "passwordEnv": "PASSWORD", "maxDataAgeSeconds": 1.9},
+    {"type": "solarman", "appIdEnv": "APP_ID", "appSecretEnv": "APP_SECRET",
+     "emailEnv": "EMAIL", "passwordEnv": "PASSWORD", "maxDataAgeSeconds": True},
+])
+def test_integer_configuration_rejects_lossy_coercions(config):
+    with pytest.raises(ConfigError):
+        validate_task("integer-check", config)
+
+
+def test_integer_configuration_keeps_integer_string_compatibility():
+    validate_task("presence-check", {"type": "presence", "targets": {"phone": "192.0.2.1"},
+                                      "awayAfter": "3"})
+
+
 def test_aliases_are_unique_and_collision_order_independent(tmp_path, monkeypatch):
     import home_infra_agent.core as core
     class Values:

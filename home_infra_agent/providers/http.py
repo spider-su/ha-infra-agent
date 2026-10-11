@@ -18,6 +18,9 @@ from ..errors import ConfigError
 from .base import TaskProvider
 
 
+_DNS_LOOKUP_SLOTS = threading.BoundedSemaphore(4)
+
+
 def _origin(url: str) -> tuple[str, str | None, int | None]:
     parts = urlsplit(url)
     default_port = 443 if parts.scheme.lower() == "https" else 80 if parts.scheme.lower() == "http" else None
@@ -59,16 +62,25 @@ class _RequestDeadline:
         failure = []
         finished = threading.Event()
 
+        if not _DNS_LOOKUP_SLOTS.acquire(timeout=self.remaining()):
+            self.remaining()
+            raise TimeoutError
+
         def lookup():
             try:
                 result.extend(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
             except OSError as exc:
                 failure.append(exc)
             finally:
+                _DNS_LOOKUP_SLOTS.release()
                 finished.set()
 
         resolver = threading.Thread(target=lookup, name="http-dns-lookup", daemon=True)
-        resolver.start()
+        try:
+            resolver.start()
+        except RuntimeError:
+            _DNS_LOOKUP_SLOTS.release()
+            raise
         if not finished.wait(self.remaining()):
             self._expire()
             raise TimeoutError
