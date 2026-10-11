@@ -180,6 +180,9 @@ def _configured_fields(task: Mapping[str, Any]) -> set[str] | None:
     if kind == "home_assistant_meter":
         from .providers.ha_meter import FIELDS
         return set(FIELDS)
+    if kind == "calculated_meter":
+        from .providers.calculated_meter import FIELDS
+        return set(FIELDS)
     if kind == "http":
         return {"reachable", "statusCode"}
     if kind == "ping":

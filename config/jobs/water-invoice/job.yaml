@@ -12,5 +12,11 @@ mqtt:
     manufacturer: Home Infra Agent
     model: Manual cumulative meter bridge
   entities:
-    cumulative_m3: {name: Water cumulative reading, device_class: water, state_class: total_increasing, unit_of_measurement: "m³", expire_after: 900}
-    source_state_changed: {name: Source state changed, device_class: timestamp, expire_after: 900}
+    cumulative_m3: {name: Water meter cumulative reading, device_class: water, state_class: total_increasing, unit_of_measurement: "m³", expire_after: 900}
+    estimated_cumulative_m3: {name: Water estimated cumulative reading, state_class: measurement, unit_of_measurement: "m³", expire_after: 900}
+    estimated_since_reading_m3: {name: Water estimated since last reading, state_class: measurement, unit_of_measurement: "m³", expire_after: 900}
+    last_reading_m3: {name: Water last real reading, state_class: measurement, unit_of_measurement: "m³", expire_after: 900}
+    last_reading_at: {name: Water last real reading at, device_class: timestamp, expire_after: 900}
+    active_mode: {name: Water active season mode, expire_after: 900}
+    step_m3_per_day: {name: Water configured daily step, unit_of_measurement: "m³/d", state_class: measurement, expire_after: 900}
+    calculated_at: {name: Water calculation time, device_class: timestamp, expire_after: 900}
