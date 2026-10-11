@@ -64,10 +64,11 @@ def test_meter_discovery_separates_real_reading_from_estimates():
     assert not errors
     gas = next(job for job in jobs if job.id == "gas-invoice")
     result = JobEngine([gas]).run_job(gas.id)
-    entities = {topic: json.loads(payload) for topic, payload in discovery_configs(gas, result)}
+    entities = {topic: json.loads(payload) for topic, payload in discovery_configs(gas, result) if payload}
     cumulative = next(payload for topic, payload in entities.items() if "_gas-invoice_cumulative_m3/config" in topic)
     estimate = next(payload for topic, payload in entities.items() if "_gas-invoice_estimated_cumulative_m3/config" in topic)
     assert cumulative["state_class"] == "total_increasing"
     assert cumulative["device_class"] == "gas"
     assert estimate["state_class"] == "measurement"
     assert "device_class" not in estimate
+    assert not any(any(marker in topic for marker in ("_reading_cumulative_m3/", "_reading_estimated_", "_reading_active_mode/", "_reading_calculated_at/", "_reading_last_", "_reading_step_")) for topic in entities)
