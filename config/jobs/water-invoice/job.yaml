@@ -7,7 +7,7 @@ freshness:
 mqtt:
   enabled: true
   auto_discover_values: false
-  retire_entities: [source_state_changed, reading.source_state_changed]
+  retire_entities: [source_state_changed, reading.source_state_changed, reading.cumulative_m3, reading.estimated_cumulative_m3, reading.estimated_since_reading_m3, reading.last_reading_at, reading.last_reading_m3, reading.step_m3_per_day, reading.active_mode, reading.calculated_at]
   topic: home/meters/water
   device:
     name: Water invoice MQTT
