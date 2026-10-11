@@ -177,6 +177,9 @@ def _configured_fields(task: Mapping[str, Any]) -> set[str] | None:
     if isinstance(task.get("extract"), Mapping):
         return set(task["extract"])
     kind = task.get("type")
+    if kind == "home_assistant_meter":
+        from .providers.ha_meter import FIELDS
+        return set(FIELDS)
     if kind == "http":
         return {"reachable", "statusCode"}
     if kind == "ping":

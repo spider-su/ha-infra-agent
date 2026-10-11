@@ -33,6 +33,20 @@ def validate_task(task_id: str, config: Mapping[str, Any]) -> None:
     kind = config.get("type")
     if kind not in PROVIDERS:
         raise ConfigError(f"task {task_id}: unsupported type {kind!r}")
+    if kind == "home_assistant_meter":
+        required = {"type", "baseUrl", "entityId", "tokenEnv"}
+        if set(config) != required:
+            raise ConfigError(f"task {task_id}: meter requires only baseUrl, entityId and tokenEnv")
+        if not isinstance(config.get("entityId"), str) or not re.fullmatch(r"input_number\.[a-z0-9_]+", config["entityId"]):
+            raise ConfigError(f"task {task_id}: meter source must be an input_number helper, not its MQTT mirror")
+        try:
+            base = urlsplit(config["baseUrl"]) if isinstance(config.get("baseUrl"), str) else None
+        except ValueError:
+            raise ConfigError(f"task {task_id}: baseUrl is invalid") from None
+        if not base or base.path not in {"", "/"} or base.query or base.fragment:
+            raise ConfigError(f"task {task_id}: baseUrl must be a plain Home Assistant origin")
+        from .providers.ha_meter import http_config
+        validate_task(task_id, http_config(config))
     if kind == "ping":
         targets = config.get("targets")
         if not isinstance(targets, dict) or not targets:

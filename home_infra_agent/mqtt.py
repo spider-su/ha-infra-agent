@@ -128,6 +128,17 @@ def discovery_configs(job: Any, result: Any, prefix: str = "homeassistant",
                   "device": {"identifiers": [identifier], "name": device.get("name", job.name),
                              "manufacturer": device.get("manufacturer", "Custom"),
                              "model": device.get("model", job.name)}}
+        # Meter failures must immediately make numeric readings unavailable,
+        # not leave a cached total looking live until the expiry timer fires.
+        if any(task.get("type") == "home_assistant_meter" for task in job.task_configs.values()) and (
+                template_path in {"cumulative_m3", "source_state_changed"}
+                or template_path.endswith((".cumulative_m3", ".source_state_changed"))):
+            config.pop("availability_topic")
+            config["availability_mode"] = "all"
+            config["availability"] = [
+                {"topic": AVAILABILITY_TOPIC},
+                {"topic": topic, "value_template": "{{ 'online' if value_json.status == 'OK' and value_json.freshness.status == 'FRESH' else 'offline' }}"},
+            ]
         if component == "binary_sensor":
             config.update(payload_on=entity_metadata.get("payload_on", "UP"),
                           payload_off=entity_metadata.get("payload_off", "DOWN"))

@@ -1,0 +1,16 @@
+name: Gas invoice MQTT
+schedule:
+  interval: 300s
+timeout: 10s
+freshness:
+  maxAge: 900s
+mqtt:
+  enabled: true
+  topic: home/meters/gas
+  device:
+    name: Gas invoice MQTT
+    manufacturer: Home Infra Agent
+    model: Manual cumulative meter bridge
+  entities:
+    cumulative_m3: {name: Gas cumulative reading, device_class: gas, state_class: total_increasing, unit_of_measurement: "m³", expire_after: 900}
+    source_state_changed: {name: Source state changed, device_class: timestamp, expire_after: 900}

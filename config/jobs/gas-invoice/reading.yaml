@@ -1,0 +1,4 @@
+type: home_assistant_meter
+baseUrl: http://192.168.1.67:8123
+entityId: input_number.historical_gas_consumption
+tokenEnv: HIA_HOME_ASSISTANT_TOKEN

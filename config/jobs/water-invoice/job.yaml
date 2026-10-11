@@ -1,0 +1,16 @@
+name: Water invoice MQTT
+schedule:
+  interval: 300s
+timeout: 10s
+freshness:
+  maxAge: 900s
+mqtt:
+  enabled: true
+  topic: home/meters/water
+  device:
+    name: Water invoice MQTT
+    manufacturer: Home Infra Agent
+    model: Manual cumulative meter bridge
+  entities:
+    cumulative_m3: {name: Water cumulative reading, device_class: water, state_class: total_increasing, unit_of_measurement: "m³", expire_after: 900}
+    source_state_changed: {name: Source state changed, device_class: timestamp, expire_after: 900}
