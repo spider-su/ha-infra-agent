@@ -509,6 +509,80 @@ def test_health_and_job_api_expose_safe_operational_diagnostics(tmp_path):
         thread.join(2)
 
 
+def test_external_monitor_heartbeat_requires_token_and_persists(tmp_path):
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    from home_infra_agent.app import AgentServer
+    from home_infra_agent.core import JobEngine
+    from home_infra_agent.heartbeat import ExternalMonitorHeartbeat, heartbeat_job
+
+    class Adapter:
+        is_connected = False
+        def __init__(self):
+            self.published = []
+        def publish(self, job, result):
+            self.published.append((job, result))
+
+    state_file = tmp_path / "state" / "heartbeat.json"
+    heartbeat = ExternalMonitorHeartbeat(state_file)
+    adapter = Adapter()
+    server = AgentServer(("127.0.0.1", 0), JobEngine([]), adapter,
+                         heartbeat=heartbeat, heartbeat_token="shared-secret",
+                         heartbeat_output_job=heartbeat_job())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        urlopen(base + "/api/jobs").read()
+        assert not state_file.exists()
+        request = Request(base + "/api/jobs", headers={"X-External-Monitor-Token": "wrong"})
+        with pytest.raises(HTTPError) as error:
+            urlopen(request)
+        assert error.value.code == 401
+        assert not state_file.exists()
+        request = Request(base + "/api/jobs", headers={"X-External-Monitor-Token": "shared-secret"})
+        assert json.loads(urlopen(request).read()) == []
+        job, result = adapter.published[0]
+        assert job.id == "external_monitor_heartbeat"
+        assert result.values == {"count": 1, "last_seen": json.loads(state_file.read_text())["lastSeen"]}
+        assert ExternalMonitorHeartbeat(state_file).record()["count"] == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_external_monitor_uses_normal_job_mqtt_mapping():
+    from home_infra_agent.heartbeat import heartbeat_job, heartbeat_result
+    from home_infra_agent.mqtt import MqttAdapter
+
+    class Client:
+        def __init__(self):
+            self.published = []
+        def publish(self, topic, payload, **kwargs):
+            self.published.append((topic, json.loads(payload), kwargs))
+
+    adapter = MqttAdapter({"enabled": True})
+    adapter.client = Client()
+    adapter.connected.set()
+    state = {"count": 8, "lastSeen": "2026-10-11T12:00:00+00:00"}
+    job = heartbeat_job()
+    result = heartbeat_result(state)
+    adapter._publish_one(job, result)
+
+    discovery = {topic: body for topic, body, _kwargs in adapter.client.published
+                 if topic.endswith("/config")}
+    count = discovery["homeassistant/sensor/home_infra_agent_external_monitor_heartbeat_count/config"]
+    last_seen = discovery["homeassistant/sensor/home_infra_agent_external_monitor_heartbeat_last_seen/config"]
+    assert count["value_template"] == '{{ value_json["values"]["count"] }}'
+    assert count["state_class"] == "total_increasing" and count["expire_after"] == 18000
+    assert last_seen["device_class"] == "timestamp" and last_seen["expire_after"] == 18000
+    state_topic = "home/external_monitor_heartbeat/state"
+    payload = next(body for topic, body, _kwargs in adapter.client.published
+                   if topic == state_topic)
+    assert payload["values"] == {"count": 8, "last_seen": state["lastSeen"]}
+
+
 def test_job_api_reports_running_state_without_triggering_execution(tmp_path):
     from urllib.request import urlopen
     from home_infra_agent.app import AgentServer

@@ -4,7 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping &&
 WORKDIR /app
 COPY pyproject.toml ./
 COPY home_infra_agent ./home_infra_agent
-RUN pip install --no-cache-dir . && useradd --system --uid 10001 agent
+RUN pip install --no-cache-dir . && useradd --system --uid 10001 agent \
+    && mkdir -p /var/lib/home-infra-agent \
+    && chown agent:agent /var/lib/home-infra-agent
 USER agent
 EXPOSE 8080
 CMD ["home-infra-agent"]
