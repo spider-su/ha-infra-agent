@@ -19,9 +19,16 @@ Each job publishes two different classes of value:
   must not be presented as measured Energy input.
 - last_reading_m3, last_reading_at, active_mode, step_m3_per_day, and
   calculated_at expose provenance and calculation state for the dashboard.
+- real_consumption_m3, unit_price_pln_per_m3, variable_charge_pln,
+  fixed_charge_pln, total_charge_pln, billing_currency, and charge_status are
+  the optional payment layer. They remain unavailable or report
+  prices_not_configured until a previous real reading and exact price periods
+  are supplied.
 
 The configured real reading is not silently advanced. A new real meter reading
 must be entered in the appropriate reading.yaml together with its timestamp.
+Append the prior real reading to reading_history before replacing the current
+reading. Only deltas between real readings can become payable consumption.
 The estimator then calculates from that fact until the next update. The
 seasonal calendar must cover every day exactly once; auto mode selects the
 configured summer or winter interval, while summer or winter mode can pin one

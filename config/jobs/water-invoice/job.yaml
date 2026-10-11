@@ -22,3 +22,10 @@ mqtt:
     active_mode: {name: Water active season mode, expire_after: 900}
     step_m3_per_day: {name: Water configured daily step, unit_of_measurement: "m³/d", state_class: measurement, expire_after: 900}
     calculated_at: {name: Water calculation time, device_class: timestamp, expire_after: 900}
+    real_consumption_m3: {name: Water real consumption since previous reading, unit_of_measurement: "m³", state_class: measurement, expire_after: 900}
+    billing_currency: {name: Water billing currency, expire_after: 900}
+    unit_price_pln_per_m3: {name: Water unit price, unit_of_measurement: "PLN/m³", state_class: measurement, expire_after: 900}
+    variable_charge_pln: {name: Water variable charge, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    fixed_charge_pln: {name: Water fixed charge, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    total_charge_pln: {name: Water total payable, unit_of_measurement: "PLN", state_class: measurement, expire_after: 900}
+    charge_status: {name: Water charge status, expire_after: 900}
