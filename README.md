@@ -357,4 +357,4 @@ HIA does not replace the separate external Google VM watchdog. Its probes and al
 
 ## Bundled network monitoring jobs
 
-The bundled `network` Job publishes gateway (`192.168.1.1`) and external ICMP (`8.8.8.8`) reachability every ten minutes. The bundled `speedtest` Job runs at 08:00 and 20:00 in `Europe/Warsaw`, using `speedtest-cli --secure --json`; its twice-daily result has a fourteen-hour freshness limit. Speedtest values are normalized to Mbit/s. Both jobs publish through the existing MQTT Discovery and availability contract.
+The bundled `network` Job publishes gateway (`192.168.1.1`) and external ICMP (`8.8.8.8`) reachability every ten minutes. The bundled `speedtest` Job runs at 08:00 and 20:00 in `Europe/Warsaw`, using the official Ookla `speedtest --format=json` CLI with automatic nearest-server selection; its twice-daily result has a fourteen-hour freshness limit. Speedtest values are normalized to Mbit/s. Both jobs publish through the existing MQTT Discovery and availability contract.
