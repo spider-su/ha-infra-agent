@@ -21,13 +21,27 @@ CONFIG = {
 }
 
 
-def test_real_reading_stays_measured_and_projection_is_separate():
+def test_cumulative_meter_advances_from_real_reading():
     result = calculate(CONFIG, datetime(2026, 11, 1, 12, tzinfo=ZONE))
-    assert result["cumulative_m3"] == 100.0
+    assert result["cumulative_m3"] == pytest.approx(103.0, abs=0.01)
     assert result["last_reading_m3"] == 100.0
     assert result["active_mode"] == "winter"
     assert result["estimated_since_reading_m3"] == pytest.approx(3.0, abs=0.01)
     assert result["estimated_cumulative_m3"] == pytest.approx(103.0, abs=0.01)
+
+
+def test_new_real_reading_rebases_projection_immediately():
+    config = {**CONFIG, "reading": {
+        "value_m3": 140.0,
+        "at": "2026-11-30T12:00:00+01:00",
+    }}
+
+    at_reading = calculate(config, datetime(2026, 11, 30, 12, tzinfo=ZONE))
+    after_reading = calculate(config, datetime(2026, 12, 1, 0, tzinfo=ZONE))
+
+    assert at_reading["cumulative_m3"] == 140.0
+    assert after_reading["cumulative_m3"] == pytest.approx(142.0, abs=0.01)
+    assert after_reading["last_reading_m3"] == 140.0
 
 
 def test_fixed_mode_uses_configured_mode_for_entire_projection():

@@ -10,13 +10,15 @@ There is no Home Assistant API dependency and no HIA_HOME_ASSISTANT_TOKEN
 requirement. The only user-maintained inputs are the real meter facts and
 configuration in infra-config, normally changed a few times per year.
 
-Each job publishes two different classes of value:
+Each job publishes a continuous Energy-facing projection plus diagnostic values:
 
-- cumulative_m3 is the configured real meter reading. It is the only entity
-  marked total_increasing and is suitable as a measured MQTT source.
-- estimated_cumulative_m3 and estimated_since_reading_m3 are calculations.
-  They are explicitly named estimates and use state_class measurement; they
-  must not be presented as measured Energy input.
+- cumulative_m3 starts at the latest configured real meter reading and advances
+  continuously using the configured seasonal rate. It is marked total_increasing
+  so Home Assistant Energy can use the projected cumulative series.
+- estimated_cumulative_m3 mirrors that same projection for diagnostics.
+  estimated_since_reading_m3 exposes only the projected delta since the latest
+  real reading. Both remain explicitly named estimates with state_class
+  measurement.
 - last_reading_m3, last_reading_at, active_mode, step_m3_per_day, and
   calculated_at expose provenance and calculation state for the dashboard.
 - real_consumption_m3, unit_price_pln_per_m3, variable_charge_pln,
@@ -25,14 +27,14 @@ Each job publishes two different classes of value:
   prices_not_configured until a previous real reading and exact price periods
   are supplied.
 
-The configured real reading is not silently advanced. A new real meter reading
-must be entered in the appropriate reading.yaml together with its timestamp.
-Append the prior real reading to reading_history before replacing the current
-reading. Only deltas between real readings can become payable consumption.
-The estimator then calculates from that fact until the next update. The
-seasonal calendar must cover every day exactly once; auto mode selects the
-configured summer or winter interval, while summer or winter mode can pin one
-mode for a controlled test or exceptional period.
+When a new real meter reading is entered in the appropriate reading.yaml
+together with its timestamp, cumulative_m3 rebases to that value immediately on
+the next job run. It then continues from the new baseline using the configured
+seasonal rate. Append the prior real reading to reading_history before replacing
+the current reading. Only deltas between real readings can become payable
+consumption. The seasonal calendar must cover every day exactly once; auto mode
+selects the configured summer or winter interval, while summer or winter mode
+can pin one mode for a controlled test or exceptional period.
 
 Readings must be finite and nonnegative cubic metres. Invalid configuration
 fails validation rather than producing zero or a fabricated measurement. A
@@ -56,9 +58,9 @@ without a successful publication; failed jobs do not refresh a cached value.
 5. Keep sensor.gas_invoice_tracker and sensor.water_invoice_tracker and their
    existing statistics until a history-preserving Energy migration is arranged.
    Do not delete the dormant HA helpers or aliases during this cutover.
-6. If the dashboard needs the projection, use the explicitly estimated entities.
-   Keep measured Energy statistics sourced only from cumulative_m3 or a verified
-   historical alias.
+6. Use cumulative_m3 as the continuous projected Energy source. Keep the
+   explicitly estimated entities available for diagnostics and dashboards that
+   need to show the projection delta or provenance.
 
 This implementation changes the agent and chart source. It does not itself
 restart Home Assistant, change live Energy preferences, or deploy the

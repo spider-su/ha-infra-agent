@@ -146,7 +146,11 @@ def calculate(config: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         active_mode = _season_for_day(current.date(), seasons)
     step = float(seasons[active_mode]["step_m3_per_day"])
     values = {
-        "cumulative_m3": round(reading_m3, 4),
+        # The Energy-facing cumulative value is a continuous projection from
+        # the latest real reading. A new real reading rebases this value
+        # immediately; between readings it advances using the configured
+        # seasonal rate.
+        "cumulative_m3": round(estimated, 4),
         "estimated_cumulative_m3": round(estimated, 4),
         "estimated_since_reading_m3": round(estimated - reading_m3, 4),
         "last_reading_m3": round(reading_m3, 4),
