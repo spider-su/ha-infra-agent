@@ -264,8 +264,16 @@ class Job:
                 except Exception as exc:  # each task is an independent failure domain
                     safe_error = str(exc) if isinstance(exc, (ConfigError, MappingError)) else f"{type(exc).__name__} (details redacted)"
                     log.warning("job %s task %s failed: %s", self.id, task_id, safe_error)
+                    # HTTP health/dispatch tasks expose a stable boolean on transport
+                    # failures too. Preserve the unknown status code as null; do not
+                    # fabricate a response or alter JSON-extraction tasks.
+                    failure_values = (
+                        {"reachable": False, "statusCode": None}
+                        if config.get("type") == "http" and "extract" not in config
+                        else {}
+                    )
                     results[task_id] = TaskResult(task_id, "ERROR", timestamp,
-                        int((time.monotonic() - task_start) * 1000), {}, safe_error)
+                        int((time.monotonic() - task_start) * 1000), failure_values, safe_error)
             statuses = [result.status for result in results.values()]
             status = "UNKNOWN" if not results else "ERROR" if "ERROR" in statuses else "WARN" if "WARN" in statuses else "OK"
             values: dict[str, Any] = {}
