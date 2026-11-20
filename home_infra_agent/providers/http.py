@@ -177,7 +177,7 @@ class _DeadlineHTTPSHandler(HTTPSHandler):
 
     def https_open(self, request):
         return self.do_open(_DeadlineHTTPSConnection, request, deadline=self.deadline,
-                            context=self._context, check_hostname=self._check_hostname)
+                            context=self._context)
 
 
 class HttpProvider(TaskProvider):

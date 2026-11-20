@@ -273,3 +273,31 @@ def test_connection_refused_and_invalid_credentials_are_safe():
     assert denied.status == "ERROR"
     assert denied.tasks["status"].values == {"reachable": False, "statusCode": 401}
     assert "private-value" not in json.dumps(denied.to_dict())
+
+
+def test_https_dispatch_handler_uses_verified_ssl_context(monkeypatch):
+    import ssl
+    import urllib.request
+    from home_infra_agent.providers.http import (
+        _DeadlineHTTPSConnection, _DeadlineHTTPSHandler, _RequestDeadline,
+    )
+
+    deadline = _RequestDeadline(2)
+    handler = _DeadlineHTTPSHandler(deadline)
+    # Python 3.12 removed HTTPSHandler._check_hostname. The SSLContext owns it.
+    if hasattr(handler, "_check_hostname"):
+        del handler._check_hostname
+    captured = {}
+    sentinel = object()
+
+    def do_open(connection, request, **kwargs):
+        captured.update(connection=connection, request=request, **kwargs)
+        return sentinel
+
+    monkeypatch.setattr(handler, "do_open", do_open)
+    request = urllib.request.Request("https://example.invalid/dispatch", method="POST", data=b"{}")
+    assert handler.https_open(request) is sentinel
+    assert captured["connection"] is _DeadlineHTTPSConnection
+    assert captured["deadline"] is deadline
+    assert captured["context"].check_hostname is True
+    assert captured["context"].verify_mode == ssl.CERT_REQUIRED
