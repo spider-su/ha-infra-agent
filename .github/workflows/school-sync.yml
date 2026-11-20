@@ -1,34 +1,54 @@
-name: Mock School Calendar Sync
+name: School Calendar Sync
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Fetch and validate without writing to Google Calendar"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: mock-school-sync
+  group: school-calendar-sync
   cancel-in-progress: false
 
 jobs:
   school-sync:
-    name: Mock eduVULCAN to Google Calendar sync
+    name: eduVULCAN to Google Calendar
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    env:
+      VULCAN_CREDENTIAL_JSON: ${{ secrets.VULCAN_CREDENTIAL_JSON }}
+      VULCAN_PUPIL_INDEX: ${{ vars.VULCAN_PUPIL_INDEX || '0' }}
+      GOOGLE_OAUTH_JSON: ${{ secrets.GOOGLE_OAUTH_JSON }}
+      GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+      SYNC_DAYS_BACK: "7"
+      SYNC_DAYS_AHEAD: "60"
+
     steps:
-      - name: Simulate school data fetch and calendar update
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/school-sync-requirements.txt
+
+      - name: Install school sync dependencies
+        run: python -m pip install -r scripts/school-sync-requirements.txt
+
+      - name: Sync calendar
         shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          echo "Mock: fetching eduVULCAN exams, homework, and schedule changes"
-          sleep 2
-          echo "Mock: Google Calendar synchronization completed"
-          echo "No external APIs were called; no calendar events were changed."
-          {
-            echo "## Mock School Calendar Sync"
-            echo ""
-            echo "- eduVULCAN: simulated"
-            echo "- Google Calendar: simulated"
-            echo "- Result: success"
-            echo "- Side effects: none"
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            python scripts/school_calendar_sync.py --dry-run
+          else
+            python scripts/school_calendar_sync.py
+          fi
