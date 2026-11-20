@@ -1,0 +1,8 @@
+# Stage 1: mock GitHub workflow_dispatch (204 No Content).
+# Stage 2: replace URL with the GitHub dispatch endpoint,
+# add bearer auth via tokenEnv, and set the GitHub API headers.
+type: http
+method: POST
+url: https://httpbin.org/status/204
+expectedStatusCodes: [204]
+timeout: 10s
