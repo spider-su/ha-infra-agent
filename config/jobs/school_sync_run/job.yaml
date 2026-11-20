@@ -1,0 +1,21 @@
+id: school_sync_run
+name: School Sync Run
+schedule:
+  interval: 30m
+timeout: 15s
+freshness:
+  maxAge: 2h
+mqtt:
+  enabled: true
+  topic: home/school_sync_run
+  device:
+    name: School Sync Run
+    manufacturer: Custom
+    model: HTTP workflow dispatch
+  entities:
+    reachable:
+      name: School sync trigger accepted
+      component: binary_sensor
+      payload_on: "true"
+      payload_off: "false"
+      icon: mdi:calendar-sync
