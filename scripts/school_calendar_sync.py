@@ -184,6 +184,20 @@ def synchronize(service, calendar_id: str, events: list[dict], dry_run: bool) ->
         # relevant values, not the entire server object.
         desired = {key: event[key] for key in fields if key in event}
         old = {key: previous.get(key) for key in desired}
+        # Google returns timed event values with UTC offsets, whereas input
+        # values use local wall time + timeZone. Normalize to instants to avoid
+        # patching unchanged events on every scheduled run.
+        for boundary in ("start", "end"):
+            if boundary in desired and "dateTime" in desired[boundary]:
+                def instant(part):
+                    raw = part["dateTime"]
+                    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=ZoneInfo(part.get("timeZone") or "Europe/Warsaw"))
+                    return parsed.timestamp()
+                if old.get(boundary) and "dateTime" in old[boundary]:
+                    if instant(old[boundary]) == instant(desired[boundary]):
+                        old[boundary] = desired[boundary]
         if old == desired:
             counts["unchanged"] += 1
         else:
