@@ -164,11 +164,10 @@ def calendar_service(oauth_json: str):
 
 
 def synchronize(service, calendar_id: str, events: list[dict], dry_run: bool) -> dict[str, int]:
-    from googleapiclient.errors import HttpError
-
     counts = {"prepared": len(events), "created": 0, "updated": 0, "unchanged": 0}
     if dry_run:
         return counts
+    from googleapiclient.errors import HttpError
     for event in events:
         event_id = event["id"]
         try:
