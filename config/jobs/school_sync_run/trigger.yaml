@@ -1,8 +1,15 @@
-# Stage 1: mock GitHub workflow_dispatch (204 No Content).
-# Stage 2: replace URL with the GitHub dispatch endpoint,
-# add bearer auth via tokenEnv, and set the GitHub API headers.
+# Dispatch the mock school calendar sync workflow.
+# Requires GITHUB_ACTIONS_TRIGGER_TOKEN in the agent runtime environment.
 type: http
 method: POST
-url: https://httpbin.org/status/204
+url: https://api.github.com/repos/spider-su/ha-infra-agent/actions/workflows/school-sync.yml/dispatches
+headers:
+  Accept: application/vnd.github+json
+  X-GitHub-Api-Version: "2022-11-28"
+auth:
+  type: bearer
+  tokenEnv: GITHUB_ACTIONS_TRIGGER_TOKEN
+body:
+  ref: main
 expectedStatusCodes: [204]
 timeout: 10s
