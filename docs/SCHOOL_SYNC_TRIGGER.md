@@ -29,3 +29,34 @@ To switch to the real GitHub workflow dispatch:
 Verify discovery with `discover_jobs(Path("config/jobs"))`, then run
 the task manually via the existing UI or API and check MQTT. An HTTP POST
 may have been accepted remotely even if the local request times out.
+
+## Stage 2: dispatchable mock GitHub Actions workflow
+
+A mock `.github/workflows/school-sync.yml` workflow is included in this
+repository as a temporary test target. It can be started manually with
+**Actions → Mock School Calendar Sync → Run workflow**. It does not
+contact eduVULCAN or Google Calendar.
+
+To connect the agent to this workflow after merging, update the task:
+
+```yaml
+type: http
+method: POST
+url: https://api.github.com/repos/spider-su/ha-infra-agent/actions/workflows/school-sync.yml/dispatches
+headers:
+  Accept: application/vnd.github+json
+  X-GitHub-Api-Version: "2022-11-28"
+auth:
+  type: bearer
+  tokenEnv: GITHUB_ACTIONS_TRIGGER_TOKEN
+body:
+  ref: main
+expectedStatusCodes: [204]
+timeout: 10s
+```
+
+Configure `GITHUB_ACTIONS_TRIGGER_TOKEN` in the deployment secret
+environment with Actions write permission scoped to this repository.
+**Do not switch the deployed job to this URL until the token is available.**
+A 204 confirms that GitHub accepted the dispatch, not that the mock job
+finished successfully. Later, move the workflow to its dedicated repository.
