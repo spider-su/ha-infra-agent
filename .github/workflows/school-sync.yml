@@ -1,0 +1,34 @@
+name: Mock School Calendar Sync
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mock-school-sync
+  cancel-in-progress: false
+
+jobs:
+  school-sync:
+    name: Mock eduVULCAN to Google Calendar sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Simulate school data fetch and calendar update
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Mock: fetching eduVULCAN exams, homework, and schedule changes"
+          sleep 2
+          echo "Mock: Google Calendar synchronization completed"
+          echo "No external APIs were called; no calendar events were changed."
+          {
+            echo "## Mock School Calendar Sync"
+            echo ""
+            echo "- eduVULCAN: simulated"
+            echo "- Google Calendar: simulated"
+            echo "- Result: success"
+            echo "- Side effects: none"
+          } >> "$GITHUB_STEP_SUMMARY"
