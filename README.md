@@ -4,6 +4,8 @@ A small, configuration-driven collector for operational state that is useful in 
 
 For the end-to-end integration workflow, deployment checks, troubleshooting, and maintenance policy, see [docs/ONBOARDING.md](docs/ONBOARDING.md).
 
+For the scheduled eduVULCAN → Google Calendar integration (Home Assistant dispatch, OAuth, Google Actions secrets, verification, and recovery), see [School Calendar Sync runbook](docs/SCHOOL_CALENDAR_SYNC.md).
+
 ```mermaid
 flowchart LR
   C[config/jobs/*] --> E[Job engine]
